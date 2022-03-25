@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option go_package = "./go_client";
+
+package helloworld;
+
+// The greeting service definition.
+service Greeter {
+  // Sends a greeting
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+  // Computes mean
+  rpc ComputeMean (stream IntNumber) returns (FloatNumber) {}
+
+  rpc ComputeMeanStream (stream IntNumber) returns (stream FloatNumber) {}
+}
+
+// The request message containing the user's name.
+message HelloRequest {
+  string name = 1;
+}
+
+// The response message containing the greetings
+message HelloReply {
+  string message = 1;
+}
+
+message IntNumber {
+  int32 value = 1;
+}
+
+message FloatNumber {
+  float value = 1;
+}
