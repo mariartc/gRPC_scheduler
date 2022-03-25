@@ -7,10 +7,14 @@ import grpc
 import helloworld_pb2
 import helloworld_pb2_grpc
 
+import os
+import threading
+import time
 
-def generate_numbers(numbers):
+
+def generate_numbers(numbers, thread_name):
     for number in numbers:
-        print(f"Sending {number}")
+        print(f"Thread {thread_name} sending {number}")
         yield helloworld_pb2.IntNumber(value=number)
 
 
@@ -20,12 +24,12 @@ def guide_compute_mean_stream(stub, numbers):
         print(f"Received mean: {response.value}")
 
 
-def guide_compute_mean(stub, numbers):
-    response = stub.ComputeMean(generate_numbers(numbers))
-    print(f"Received mean: {response.value}")
+def guide_compute_mean(stub, numbers, thread_name):
+    response = stub.ComputeMean(generate_numbers(numbers, thread_name))
+    print(f"Thread {thread_name} received mean: {response.value}")
 
 
-def run(args):
+def run_args(args):
     channel = grpc.insecure_channel('localhost:50051')
     stub = helloworld_pb2_grpc.GreeterStub(channel)
 
@@ -38,6 +42,29 @@ def run(args):
 
     if args.which == 'compute_mean':
         guide_compute_mean(stub, list(args.numbers))
+
+
+def task1(stub):
+    guide_compute_mean(stub, [i for i in range(10)], threading.current_thread().name)
+
+
+def task2(stub):
+    guide_compute_mean(stub, [i for i in range(15)], threading.current_thread().name)
+
+
+def run_threads():
+    channel = grpc.insecure_channel('localhost:50051')
+    stub = helloworld_pb2_grpc.GreeterStub(channel)
+
+    t1 = threading.Thread(target=task1, args=[stub], name='t1')
+    t2 = threading.Thread(target=task2, args=[stub], name='t2')
+
+    t1.start()
+    # time.sleep(0.0005)
+    t2.start()
+
+    # t1.join()
+    # t2.join()
 
 
 def add_arguments(parser: argparse.ArgumentParser):
@@ -64,8 +91,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLI tool to manage\
                                 user\'s inputs')
 
-    add_arguments(parser)
-    args = parser.parse_args()
                           
     logging.basicConfig()
-    run(args)
+    run_threads()
+    # add_arguments(parser)
+    # args = parser.parse_args()
+    # run_args(args)
