@@ -12,16 +12,18 @@ import threading
 import time
 
 
-def generate_numbers(numbers, thread_name):
+def generate_numbers(numbers, thread_name, prnt = True):
     for number in numbers:
-        print(f"Thread {thread_name} sending {number}")
+        if prnt:
+            print(f"Thread {thread_name} sending {number}")
+        # time.sleep(2)
         yield helloworld_pb2.IntNumber(value=number)
 
 
-def guide_compute_mean_stream(stub, numbers):
-    responses = stub.ComputeMeanStream(generate_numbers(numbers))
+def guide_compute_mean_stream(stub, numbers, thread_name):
+    responses = stub.ComputeMeanStream(generate_numbers(numbers, thread_name))
     for response in responses:
-        print(f"Received mean: {response.value}")
+        print(f"Thread {thread_name} received mean: {response.value}")
 
 
 def guide_compute_mean(stub, numbers, thread_name):
@@ -43,6 +45,12 @@ def run_args(args):
     if args.which == 'compute_mean':
         guide_compute_mean(stub, list(args.numbers))
 
+    if args.which == 'throughput':
+        run_throughput()
+
+    else:
+        run_threads()
+
 
 def task1(stub):
     guide_compute_mean(stub, [i for i in range(10)], threading.current_thread().name)
@@ -52,19 +60,34 @@ def task2(stub):
     guide_compute_mean(stub, [i for i in range(15)], threading.current_thread().name)
 
 
+def task3(stub):
+    response = stub.SayHello(helloworld_pb2.HelloRequest(name="you"))
+    print(f"Thread {threading.current_thread().name} received: {response.message}")
+
+
 def run_threads():
     channel = grpc.insecure_channel('localhost:50051')
     stub = helloworld_pb2_grpc.GreeterStub(channel)
 
     t1 = threading.Thread(target=task1, args=[stub], name='t1')
     t2 = threading.Thread(target=task2, args=[stub], name='t2')
+    t3 = threading.Thread(target=task3, args=[stub], name='t3')
 
     t1.start()
-    # time.sleep(0.0005)
     t2.start()
-
+    t3.start()
     # t1.join()
     # t2.join()
+    # t3.join()
+
+
+def run_throughput():
+    channel = grpc.insecure_channel('localhost:50051')
+    stub = helloworld_pb2_grpc.GreeterStub(channel)
+
+    response = stub.ComputeMean(generate_numbers([3 for _ in range(100000)], "main", False))
+    print(f"Thread main received mean: {response.value}")
+
 
 
 def add_arguments(parser: argparse.ArgumentParser):
@@ -86,14 +109,19 @@ def add_arguments(parser: argparse.ArgumentParser):
     parser_view.add_argument('-n', '--numbers', nargs="+", default=-1, type=int,
                                  help='The numbers of which mean value will be computed')
 
+    parser_add_node = sub.add_parser('throughput', help='Test server\'s packets/sec')
+    parser_add_node.set_defaults(which='throughput')
+
+    parser_add_node = sub.add_parser('threads', help='Test threads')
+    parser_add_node.set_defaults(which='threads')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLI tool to manage\
                                 user\'s inputs')
 
-                          
+
     logging.basicConfig()
-    run_threads()
-    # add_arguments(parser)
-    # args = parser.parse_args()
-    # run_args(args)
+    add_arguments(parser)
+    args = parser.parse_args()
+    run_args(args)
