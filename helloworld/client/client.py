@@ -32,28 +32,24 @@ def guide_compute_mean(stub, numbers, thread_name):
 
 
 def run_args(args):
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel('127.0.0.1:50051')
     stub = helloworld_pb2_grpc.GreeterStub(channel)
 
     if args.which == 'greeter':
         response = stub.SayHello(helloworld_pb2.HelloRequest(name=args.name))
         print("Greeter client received: " + response.message)
-
-    if args.which == 'compute_mean_stream':
-        guide_compute_mean_stream(stub, list(args.numbers))
-
-    if args.which == 'compute_mean':
-        guide_compute_mean(stub, list(args.numbers))
-
-    if args.which == 'throughput':
-        run_throughput()
-
+    elif args.which == 'compute_mean_stream':
+        guide_compute_mean_stream(stub, list(args.numbers), "main")
+    elif args.which == 'compute_mean':
+        guide_compute_mean(stub, list(args.numbers), "main")
+    elif args.which == 'throughput':
+        run_throughput(stub)
     else:
-        run_threads()
+        run_threads(stub)
 
 
 def task1(stub):
-    guide_compute_mean(stub, [i for i in range(10)], threading.current_thread().name)
+    guide_compute_mean(stub, [3 for i in range(10)], threading.current_thread().name)
 
 
 def task2(stub):
@@ -65,9 +61,7 @@ def task3(stub):
     print(f"Thread {threading.current_thread().name} received: {response.message}")
 
 
-def run_threads():
-    channel = grpc.insecure_channel('localhost:50051')
-    stub = helloworld_pb2_grpc.GreeterStub(channel)
+def run_threads(stub):
 
     t1 = threading.Thread(target=task1, args=[stub], name='t1')
     t2 = threading.Thread(target=task2, args=[stub], name='t2')
@@ -81,9 +75,7 @@ def run_threads():
     # t3.join()
 
 
-def run_throughput():
-    channel = grpc.insecure_channel('localhost:50051')
-    stub = helloworld_pb2_grpc.GreeterStub(channel)
+def run_throughput(stub):
 
     response = stub.ComputeMean(generate_numbers([3 for _ in range(100000)], "main", False))
     print(f"Thread main received mean: {response.value}")
