@@ -12,6 +12,10 @@ service Greeter {
   rpc ComputeMean (stream IntNumber) returns (FloatNumber) {}
 
   rpc ComputeMeanStream (stream IntNumber) returns (stream FloatNumber) {}
+
+  rpc SendLongString (LongString) returns (LongString) {}
+
+  rpc ComputeMeanOrSendLongString (stream FloatOrLongString) returns (FloatOrLongString) {}
 }
 
 // The request message containing the user's name.
@@ -30,4 +34,15 @@ message IntNumber {
 
 message FloatNumber {
   float value = 1;
+}
+
+message LongString {
+  bytes str = 1;
+}
+
+message FloatOrLongString {
+  oneof type {
+    FloatNumber float_number_type = 1;
+    LongString long_string_type = 2;
+  }
 }

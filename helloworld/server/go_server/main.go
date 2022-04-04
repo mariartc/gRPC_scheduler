@@ -89,6 +89,56 @@ func (s *server) ComputeMeanStream(stream pb.Greeter_ComputeMeanStreamServer) er
 	}
 }
 
+func (s *server) SendLongString(ctx context.Context, in *pb.LongString) (*pb.LongString, error) {
+	return &pb.LongString{Str: in.Str}, nil
+}
+
+func (s *server) ComputeMeanOrSendLongString(stream pb.Greeter_ComputeMeanOrSendLongStringServer) error {
+	var sum float32
+	var total_numbers int32
+	var long_string []byte
+	sum = 0
+	total_numbers = 0
+
+	for {
+		int_or_long_number, err := stream.Recv()
+		if err == io.EOF {
+			if sum == 0 {
+				return stream.SendAndClose(&pb.FloatOrLongString{
+					Type: &pb.FloatOrLongString_LongStringType{
+						LongStringType: &pb.LongString{
+							Str: long_string,
+						},
+					},
+				})
+			} else {
+				log.Printf("Returning mean: %v", float32(sum)/float32(total_numbers))
+				return stream.SendAndClose(&pb.FloatOrLongString{
+					Type: &pb.FloatOrLongString_FloatNumberType{
+						FloatNumberType: &pb.FloatNumber{
+							Value: float32(sum) / float32(total_numbers),
+						},
+					},
+				})
+			}
+		}
+		if err != nil {
+			return err
+		}
+		switch u := int_or_long_number.Type.(type) {
+		case *pb.FloatOrLongString_FloatNumberType:
+			{
+				sum += u.FloatNumberType.Value
+				total_numbers++
+			}
+		case *pb.FloatOrLongString_LongStringType:
+			{
+				long_string = u.LongStringType.Str
+			}
+		}
+	}
+}
+
 func main() {
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *port))
