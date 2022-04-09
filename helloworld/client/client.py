@@ -20,8 +20,7 @@ def generate_long_string():
     # file.write(long_string)
     # file.close()
     file = open("client/long_string.txt","r+")
-    long_string = file.read()
-    return bytes(long_string, 'utf-8')
+    return file.read()
 
 
 def generate_numbers(numbers, thread_name = "main", prnt = True):
@@ -125,13 +124,13 @@ def run_throughput(stub):
 
 def run_serially(stub):
     start = time.time()
-    send_long_string(stub)
-    end = time.time()
-    print(f"SendLongString RPC execution time: {end - start}")
-    start = time.time()
     compute_mean(stub, [3 for _ in range(5)], prnt = False)
     end = time.time()
     print(f"ComputeMean RPC execution time: {end - start}")
+    start = time.time()
+    send_long_string(stub)
+    end = time.time()
+    print(f"SendLongString RPC execution time: {end - start}")
 
 
 def run_concurrently(stub):
@@ -144,13 +143,13 @@ def run_concurrently(stub):
 
 def run_serially_common_rpc(stub):
     start = time.time()
-    compute_mean_or_send_long_string(stub, "send_long_string")
-    end = time.time()
-    print(f"SendLongString with common RPC execution time for : {end - start}")
-    start = time.time()
     compute_mean_or_send_long_string(stub, "compute_mean")
     end = time.time()
     print(f"ComputeMean with common RPC execution time: {end - start}")
+    start = time.time()
+    compute_mean_or_send_long_string(stub, "send_long_string")
+    end = time.time()
+    print(f"SendLongString with common RPC execution time for : {end - start}")
 
 
 def run_concurrently_common_rpc(stub):
@@ -162,7 +161,8 @@ def run_concurrently_common_rpc(stub):
 
 
 def run_args(args):
-    channel = grpc.insecure_channel('127.0.0.1:50051')
+    options = [('grpc.max_message_length', 100 * 1024 * 1024)]
+    channel = grpc.insecure_channel('127.0.0.1:50051', options)
     stub = helloworld_pb2_grpc.GreeterStub(channel)
 
     if args.which == 'greeter':

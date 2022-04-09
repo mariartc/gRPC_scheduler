@@ -9,7 +9,6 @@ import (
 	"net"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/channelz/service"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 
 	"time"
@@ -89,6 +88,21 @@ func (s *server) ComputeMeanStream(stream pb.Greeter_ComputeMeanStreamServer) er
 	}
 }
 
+func (s *server) ComputeMeanRepeated(ctx context.Context, in *pb.FloatNumberList) (*pb.FloatNumber, error) {
+	var sum float32
+	var total_numbers int32
+	var input []float32
+	input = in.GetValue()
+	for _, s := range input {
+		sum += float32(s)
+		total_numbers++
+	}
+	log.Printf("Returning mean: %v", float32(sum)/float32(total_numbers))
+	return &pb.FloatNumber{
+		Value: float32(sum) / float32(total_numbers),
+	}, nil
+}
+
 func (s *server) SendLongString(ctx context.Context, in *pb.LongString) (*pb.LongString, error) {
 	return &pb.LongString{Str: in.Str}, nil
 }
@@ -96,7 +110,7 @@ func (s *server) SendLongString(ctx context.Context, in *pb.LongString) (*pb.Lon
 func (s *server) ComputeMeanOrSendLongString(stream pb.Greeter_ComputeMeanOrSendLongStringServer) error {
 	var sum float32
 	var total_numbers int32
-	var long_string []byte
+	var long_string string
 	sum = 0
 	total_numbers = 0
 
@@ -139,6 +153,50 @@ func (s *server) ComputeMeanOrSendLongString(stream pb.Greeter_ComputeMeanOrSend
 	}
 }
 
+func (s *server) ComputeMeanRepeatedOrSendLongString(ctx context.Context, in *pb.FloatNumberListOrLongString) (*pb.FloatOrLongString, error) {
+	switch u := in.Type.(type) {
+	case *pb.FloatNumberListOrLongString_FloatNumberListType:
+		{
+			var sum float32
+			var total_numbers int32
+			var input []float32
+			input = u.FloatNumberListType.Value
+			for _, s := range input {
+				sum += float32(s)
+				total_numbers++
+			}
+			// log.Printf("Returning mean: %v", float32(sum)/float32(total_numbers))
+			return &pb.FloatOrLongString{
+				Type: &pb.FloatOrLongString_FloatNumberType{
+					FloatNumberType: &pb.FloatNumber{
+						Value: float32(sum) / float32(total_numbers),
+					},
+				},
+			}, nil
+		}
+	case *pb.FloatNumberListOrLongString_LongStringType:
+		{
+			var long_string string
+			long_string = u.LongStringType.Str
+			return &pb.FloatOrLongString{
+				Type: &pb.FloatOrLongString_LongStringType{
+					LongStringType: &pb.LongString{
+						Str: long_string,
+					},
+				},
+			}, nil
+		}
+	}
+
+	return &pb.FloatOrLongString{
+		Type: &pb.FloatOrLongString_LongStringType{
+			LongStringType: &pb.LongString{
+				Str: "Error",
+			},
+		},
+	}, nil
+}
+
 func main() {
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *port))
@@ -146,7 +204,6 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	service.RegisterChannelzServiceToServer(s)
 	pb.RegisterGreeterServer(s, &server{})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {

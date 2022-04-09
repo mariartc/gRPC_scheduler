@@ -11,11 +11,15 @@ service Greeter {
   // Computes mean
   rpc ComputeMean (stream IntNumber) returns (FloatNumber) {}
 
+  rpc ComputeMeanRepeated (FloatNumberList) returns (FloatNumber) {}
+
   rpc ComputeMeanStream (stream IntNumber) returns (stream FloatNumber) {}
 
   rpc SendLongString (LongString) returns (LongString) {}
 
   rpc ComputeMeanOrSendLongString (stream FloatOrLongString) returns (FloatOrLongString) {}
+
+  rpc ComputeMeanRepeatedOrSendLongString (FloatNumberListOrLongString) returns (FloatOrLongString) {}
 }
 
 // The request message containing the user's name.
@@ -32,17 +36,28 @@ message IntNumber {
   int32 value = 1;
 }
 
+message FloatNumberList {
+  repeated float value = 1;
+}
+
 message FloatNumber {
   float value = 1;
 }
 
 message LongString {
-  bytes str = 1;
+  string str = 1;
 }
 
 message FloatOrLongString {
   oneof type {
     FloatNumber float_number_type = 1;
+    LongString long_string_type = 2;
+  }
+}
+
+message FloatNumberListOrLongString {
+  oneof type {
+    FloatNumberList float_number_list_type = 1;
     LongString long_string_type = 2;
   }
 }
