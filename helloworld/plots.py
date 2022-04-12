@@ -22,7 +22,7 @@ def plot(title, x, y, xlabel, ylabel, save_name, color, kind="plot"):
         plt.bar(x, y, width=0.3, color=color)
 
     plt.title(title)
-    plt.ylabel(ylabel) # TODO: add measure unit
+    plt.ylabel(ylabel)
     plt.xlabel(xlabel)
 
     plt.savefig(f"plots/{save_name}", bbox_inches='tight')

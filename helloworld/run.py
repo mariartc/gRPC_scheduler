@@ -4,9 +4,9 @@ import random
 import string
 
 # VARIABLES
-PATH_TO_EXE = "C:\\Users\\marak\\Documents\\HMMY\\Thesis\\ghz-windows-x86_64\\ghz.exe"
-PATH_TO_PROTO= "C:\\Users\\marak\\Documents\\HMMY\\Thesis\\gRPC\\helloworld\\helloworld.proto"
-PATH_TO_CONFIG = "C:\\Users\\marak\\Documents\\HMMY\\Thesis\\gRPC\\helloworld\\ghz.json"
+PATH_TO_EXE = "./ghz"
+PATH_TO_PROTO= "./helloworld.proto"
+PATH_TO_CONFIG = "./ghz.json"
 RPC_CALL = "helloworld.Greeter.ComputeMeanRepeatedOrSendLongString"
 OUTPUT_FORMAT = "pretty"
 OUTPUT_FILE = " > test.json"
