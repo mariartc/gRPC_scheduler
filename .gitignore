@@ -5,5 +5,5 @@ helloworld/client/helloworld_pb2.py
 helloworld/client/long_string.txt
 helloworld/client/long_array.txt
 helloworld/ghz.json
-helloworld/results.json
 helloworld/test.json
+helloworld/ghz
