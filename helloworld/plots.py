@@ -1,74 +1,89 @@
-import matplotlib.pyplot as plt
 import json
+import matplotlib.pyplot as plt
 
 
 with open('results.json') as json_file:
     results = json.load(json_file)
+
 
 def extract_details(string):
     string = string.replace("[", "")
     string = string.replace("]", "")
     return string.split(", ")
 
+
+def plot(title, x, y, xlabel, ylabel, save_name, color, kind="plot"):
+    if kind == "plot":
+        plt.figure()
+        plt.plot(y, color=color)
+        plt.xticks(range(len(x)), x)
+    else:
+        plt.figure(figsize=(25, 6))
+        plt.bar(x, y, width=0.3, color=color)
+
+    plt.title(title)
+    plt.ylabel(ylabel) # TODO: add measure unit
+    plt.xlabel(xlabel)
+
+    plt.savefig(f"plots/{save_name}", bbox_inches='tight')
+
+    plt.clf()
+
+
+def make_plots(changing_variable):
+    keys = list(results[changing_variable].keys())
+    [total, concurrency, cpus, data_type] = extract_details(keys[0])
+
+    if changing_variable == "concurrency":
+        x = [extract_details(i)[1] for i in keys]
+        title = f" for {total} calls, {cpus} cpus and {data_type}"
+        xlabel = "Concurrency"
+        kind = "plot"
+    elif changing_variable == "total":
+        x = [extract_details(i)[0] for i in keys]
+        title = f" for {concurrency} concurrency, {cpus} cpus and {data_type}"
+        xlabel = "Total calls"
+        kind = "plot"
+    elif changing_variable == "cpus":
+        x = [extract_details(i)[2] for i in keys]
+        title = f" for {concurrency} concurrency, {total} calls and {data_type}"
+        xlabel = "Number of cpu cores"
+        kind = "plot"
+    elif changing_variable == "data":
+        x = [extract_details(i)[3] for i in keys]
+        title = f" for {concurrency} concurrency, {total} calls and {cpus} cpus"
+        xlabel = "Data type"
+        kind = "bar"
+
+    average_latency = [results[changing_variable][i]["average"]/1000000 for i in keys]
+    total_time = [results[changing_variable][i]["total"]/1000000 for i in keys]
+    rps = [results[changing_variable][i]["rps"] for i in keys]
+
+    plot(title="Average latency"+title, \
+        x=x, y=average_latency, xlabel=xlabel, \
+        ylabel='Average latency (ms)', save_name=f"average_latency/{changing_variable}.png", \
+        color="limegreen", kind=kind)
+
+    plot(title='Total time'+title, \
+        x=x, y=total_time, xlabel=xlabel, \
+        ylabel='Total time (ms)', save_name=f"total_time/{changing_variable}.png", \
+        color="royalblue", kind=kind)
+
+    plot(title='Requests per second'+title, \
+        x=x, y=rps, xlabel=xlabel, \
+        ylabel='RPS', save_name=f"rps/{changing_variable}.png", \
+        color="pink", kind=kind)
+
+
+
 # CONCURRENCY
-concurrency_keys = list(results["concurrency"].keys())
-[total, _, cpus, data_type] = extract_details(concurrency_keys[0])
-concurrencies = [extract_details(x)[1] for x in concurrency_keys]
-average_latency = [results["concurrency"][x]["average"] for x in concurrency_keys]
-
-plt.figure()
-plt.title(f"Average latency for {total} calls, {cpus} cpus and {data_type}")
-plt.plot(average_latency, color="limegreen")
-plt.ylabel('Average latency') # TODO: add measure unit
-plt.xlabel('Concurrency')
-plt.xticks(range(len(concurrencies)), concurrencies)
-plt.savefig('plots/average_latency_concurrency.png', bbox_inches='tight')
-
-plt.clf()
+make_plots("concurrency")
 
 # TOTAL
-total_keys = list(results["total"].keys())
-[_, concurrency, cpus, data_type] = extract_details(total_keys[0])
-total = [extract_details(x)[0] for x in total_keys]
-average_latency = [results["total"][x]["average"] for x in total_keys]
-
-plt.figure()
-plt.title(f"Average latency for {concurrency} concurrency, {cpus} cpus and {data_type}")
-plt.plot(average_latency, color="limegreen")
-plt.ylabel('Average latency') # TODO: add measure unit
-plt.xlabel('Total calls')
-plt.xticks(range(len(total)), total)
-plt.savefig('plots/average_latency_total.png', bbox_inches='tight')
-
-plt.clf()
+make_plots("total")
 
 # CPUS
-cpus_keys = list(results["cpus"].keys())
-[total, concurrency, _, data_type] = extract_details(cpus_keys[0])
-cpus = [extract_details(x)[2] for x in cpus_keys]
-average_latency = [results["cpus"][x]["average"] for x in cpus_keys]
-
-plt.figure()
-plt.title(f"Average latency for {concurrency} concurrency, {total} calls and {data_type}")
-plt.plot(average_latency, color="limegreen")
-plt.ylabel('Average latency') # TODO: add measure unit
-plt.xlabel('Number of cpu cores')
-plt.xticks(range(len(cpus)), cpus)
-plt.savefig('plots/average_latency_cpus.png', bbox_inches='tight')
-
-plt.clf()
+make_plots("cpus")
 
 # DATA
-data_keys = list(results["data"].keys())
-[total, concurrency, cpus, _] = extract_details(data_keys[0])
-data = [extract_details(x)[3] for x in data_keys]
-average_latency = [results["data"][x]["average"] for x in data_keys]
-
-plt.figure()
-plt.title(f"Average latency for {concurrency} concurrency, {total} calls and {cpus} cpus")
-plt.bar(data, average_latency, color="limegreen", width = 0.4)
-plt.ylabel('Average latency') # TODO: add measure unit
-plt.xlabel('Data type')
-plt.savefig('plots/average_latency_data.png', bbox_inches='tight')
-
-plt.clf()
+make_plots("data")

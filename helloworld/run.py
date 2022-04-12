@@ -19,228 +19,226 @@ OPTIONS = " --insecure --proto=" + PATH_TO_PROTO + " --call=" + RPC_CALL + \
 
 # HELPER FUNCTIONS
 def generate_float_number_list_data(dimension = 3, rng = 100):
-    return random.sample(range(rng), dimension)
+    return {
+                "float_number_list_type": {
+                    "value": [random.randint(0, rng) for _ in range(dimension)]
+                }
+            }
 
 def generate_long_string_data(length = 100):
-    return ''.join(random.choices(string.ascii_lowercase, k = length))
+    return {
+                "long_string_type": {
+                    "str": ''.join(random.choices(string.ascii_lowercase, k = length))
+                }
+            }
 
-
-
-# CHANGE CONCURRENCY
-concurrency = [1, 5, 10, 50, 100, 150, 200]
-TOTAL_FOR_CONCURRENCY = 1000
-CPUS_FOR_CONCURRENCY = 2
-DATA_LEN_FOR_CONCURRENCY = 100
-DATA_FOR_CONCURRENCY = [
-                        {
-                            "float_number_list_type": {
-                                "value": generate_float_number_list_data(DATA_LEN_FOR_CONCURRENCY)
-                            }
-                        }
-                    ]
-DATA_TYPE_FOR_CONCURRENCY = f"float_number_list_type_{DATA_LEN_FOR_CONCURRENCY}"
-
-ghz_json = {
-    "total": TOTAL_FOR_CONCURRENCY,
-    "cpus": CPUS_FOR_CONCURRENCY,
-    "data": DATA_FOR_CONCURRENCY
-}
-
-print(f"Testing concurrency with {TOTAL_FOR_CONCURRENCY} calls, {CPUS_FOR_CONCURRENCY} cpus and {DATA_TYPE_FOR_CONCURRENCY} data")
-
-file = open(RESULTS_FILE, "r")
-results_so_far = json.load(file)
-file.close()
-
-concurrency_results = {}
-
-for c in concurrency:
-    # run tests
-    ghz_json["concurrency"] = c
-    file = open("ghz.json","w")
-    file.write(json.dumps(ghz_json, indent=4))
+def read_results_so_far():
+    file = open(RESULTS_FILE, "r")
+    results_so_far = json.load(file)
     file.close()
-    os.system(PATH_TO_EXE+OPTIONS)
+    return results_so_far
 
-    # get results
+def read_current_results():
     file = open(OUTPUT_FILE[3:], "r")
     current_results = json.load(file)
     file.close()
+    return current_results
 
-    # append results to concurrency results
-    key = f"[{TOTAL_FOR_CONCURRENCY}, {c}, {CPUS_FOR_CONCURRENCY}, {DATA_TYPE_FOR_CONCURRENCY}]"
-    concurrency_results[key] = current_results
-
-#append concurrency results to results so far
-results_so_far["concurrency"] = concurrency_results
-file = open(RESULTS_FILE, "w")
-file.write(json.dumps(results_so_far, indent=4))
-file.close()
-
-
-
-# CHANGE TOTAL
-total = [100, 10000, 100000, 500000]
-CONCURRENCY_FOR_TOTAL = 20
-CPUS_FOR_TOTAL = 2
-DATA_LEN_FOR_TOTAL = 100
-DATA_FOR_TOTAL = [
-                    {
-                        "float_number_list_type": {
-                            "value": generate_float_number_list_data(DATA_LEN_FOR_TOTAL)
-                        }
-                    }
-                ]
-DATA_TYPE_FOR_TOTAL = f"float_number_list_type_{DATA_LEN_FOR_TOTAL}"
-
-ghz_json = {
-    "concurrency": CONCURRENCY_FOR_TOTAL,
-    "cpus": CPUS_FOR_TOTAL,
-    "data": DATA_FOR_TOTAL
-}
-
-print(f"Testing total calls with {CONCURRENCY_FOR_TOTAL} concurrency, {CPUS_FOR_TOTAL} cpus and {DATA_TYPE_FOR_TOTAL} data")
-
-file = open(RESULTS_FILE, "r")
-results_so_far = json.load(file)
-file.close()
-
-total_results = {}
-
-for n in total:
-    # run tests
-    ghz_json["total"] = n
+def write_ghz_json(ghz_json):
     file = open("ghz.json","w")
     file.write(json.dumps(ghz_json, indent=4))
     file.close()
-    os.system(PATH_TO_EXE+OPTIONS)
 
-    # get results
-    file = open(OUTPUT_FILE[3:], "r")
-    current_results = json.load(file)
+def append_results(results):
+    file = open(RESULTS_FILE, "w")
+    file.write(json.dumps(results, indent=4))
     file.close()
 
-    # append results to concurrency results
-    key = f"[{n}, {CONCURRENCY_FOR_TOTAL}, {CPUS_FOR_TOTAL}, {DATA_TYPE_FOR_TOTAL}]"
-    total_results[key] = current_results
-
-#append concurrency results to results so far
-results_so_far["total"] = total_results
-file = open(RESULTS_FILE, "w")
-file.write(json.dumps(results_so_far, indent=4))
-file.close()
 
 
 
-# CHANGE CPUS
-cpus = [1, 2, 4, 8]
-CONCURRENCY_FOR_CPUS = 20
-TOTAL_FOR_CPUS = 1000
-DATA_LEN_FOR_CPUS = 100
-DATA_FOR_CPUS = [
-                    {
-                        "float_number_list_type": {
-                            "value": generate_float_number_list_data(DATA_LEN_FOR_CPUS)
-                        }
-                    }
-                ]
-DATA_TYPE_FOR_CPUS = f"float_number_list_type_{DATA_LEN_FOR_CPUS}"
+# TEST CONCURRENCY
+def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
+                    concurrency = [1, 5, 10, 50, 100, 150, 200], \
+                    total_for_concurrency = 1000, cpus_for_concurrency = 2):
+    ghz_json = {
+        "total": total_for_concurrency,
+        "cpus": cpus_for_concurrency
+    }
 
-ghz_json = {
-    "concurrency": CONCURRENCY_FOR_CPUS,
-    "total": TOTAL_FOR_CPUS,
-    "data": DATA_FOR_CPUS
-}
+    print(f"Testing concurrency with {total_for_concurrency} calls, {cpus_for_concurrency} cpus and {data_type_for_concurrency} data")
 
-print(f"Testing cpus with {CONCURRENCY_FOR_CPUS} concurrency, {TOTAL_FOR_CPUS} calls and {DATA_TYPE_FOR_CPUS} data")
+    results_so_far = read_results_so_far()
+    concurrency_results = {}
 
-file = open(RESULTS_FILE, "r")
-results_so_far = json.load(file)
-file.close()
+    for c in concurrency:
+        # generate random data
+        if data_type_for_concurrency[:23] == "float_number_list_type_":
+            data_for_concurrency = [generate_float_number_list_data(data_len_for_concurrency)]
+        else:
+            data_for_concurrency = [generate_long_string_data(data_len_for_concurrency)]
 
-cpus_results = {}
+        # run tests
+        ghz_json["concurrency"] = c
+        ghz_json["data"] = data_for_concurrency
+        write_ghz_json(ghz_json)
+        os.system(PATH_TO_EXE+OPTIONS)
 
-for cpu in cpus:
-    # run tests
-    ghz_json["cpus"] = cpu
-    file = open("ghz.json","w")
-    file.write(json.dumps(ghz_json, indent=4))
-    file.close()
-    os.system(PATH_TO_EXE+OPTIONS)
+        # get results
+        current_results = read_current_results()
 
-    # get results
-    file = open(OUTPUT_FILE[3:], "r")
-    current_results = json.load(file)
-    file.close()
+        # append results to concurrency results
+        key = f"[{total_for_concurrency}, {c}, {cpus_for_concurrency}, {data_type_for_concurrency}]"
+        concurrency_results[key] = current_results
 
-    # append results to cpu results
-    key = f"[{TOTAL_FOR_CPUS}, {CONCURRENCY_FOR_CPUS}, {cpu}, {DATA_TYPE_FOR_CPUS}]"
-    cpus_results[key] = current_results
-
-#append cpu results to results so far
-results_so_far["cpus"] = cpus_results
-file = open(RESULTS_FILE, "w")
-file.write(json.dumps(results_so_far, indent=4))
-file.close()
+    #append concurrency results to results so far
+    results_so_far["concurrency"] = concurrency_results
+    append_results(results_so_far)
 
 
 
-# CHANGE DATA
-data = {}
-DATA_LEN_FOR_FLOAT_NUMBER_DATA_TYPE = 100
-DATA_LEN_FOR_LONG_STRING_DATA_TYPE = 100
-data[f"float_number_list_type_{DATA_LEN_FOR_FLOAT_NUMBER_DATA_TYPE}"] = [
-                                    {
-                                        "float_number_list_type": {
-                                            "value": generate_float_number_list_data(DATA_LEN_FOR_FLOAT_NUMBER_DATA_TYPE)
-                                        }
-                                    }
-                                ]
-data[f"long_string_type_{DATA_LEN_FOR_LONG_STRING_DATA_TYPE}"] = [
-                                {
-                                    "long_string_type": {
-                                        "str": generate_long_string_data(DATA_LEN_FOR_LONG_STRING_DATA_TYPE)
-                                    }
-                                }
-                            ]
+# TEST TOTAL
+def test_total(data_len_for_total, data_type_for_total, \
+                total = [100, 1000, 10000, 100000, 500000], \
+                    concurrency_for_total = 20, \
+                    cpus_for_total = 2):
 
-CONCURRENCY_FOR_DATA = 20
-TOTAL_FOR_DATA = 1000
-CPUS_FOR_DATA = 2
+    ghz_json = {
+        "concurrency": concurrency_for_total,
+        "cpus": cpus_for_total
+    }
 
-ghz_json = {
-    "concurrency": CONCURRENCY_FOR_DATA,
-    "total": TOTAL_FOR_DATA,
-    "cpus": CPUS_FOR_DATA
-}
+    print(f"Testing total calls with {concurrency_for_total} concurrency, {cpus_for_total} cpus and {data_type_for_total} data")
 
-print(f"Testing data with {CONCURRENCY_FOR_DATA} concurrency, {TOTAL_FOR_DATA} calls and {CPUS_FOR_DATA} cpus")
+    results_so_far = read_results_so_far()
+    total_results = {}
 
-file = open(RESULTS_FILE, "r")
-results_so_far = json.load(file)
-file.close()
+    for n in total:
+        # generate random data
+        if data_type_for_total[:23] == "float_number_list_type_":
+            data_for_total = [generate_float_number_list_data(data_len_for_total)]
+        else:
+            data_for_total = [generate_long_string_data(data_len_for_total)]
 
-data_results = {}
+        # run tests
+        ghz_json["total"] = n
+        ghz_json["data"] = data_for_total
+        write_ghz_json(ghz_json)
+        os.system(PATH_TO_EXE+OPTIONS)
 
-for d_type, d in data.items():
-    # run tests
-    ghz_json["data"] = d
-    file = open("ghz.json","w")
-    file.write(json.dumps(ghz_json, indent=4))
-    file.close()
-    os.system(PATH_TO_EXE+OPTIONS)
+        # get results
+        current_results = read_current_results()
 
-    # get results
-    file = open(OUTPUT_FILE[3:], "r")
-    current_results = json.load(file)
-    file.close()
+        # append results to concurrency results
+        key = f"[{n}, {concurrency_for_total}, {cpus_for_total}, {data_type_for_total}]"
+        total_results[key] = current_results
 
-    # append results to data results
-    key = f"[{TOTAL_FOR_DATA}, {CONCURRENCY_FOR_DATA}, {CPUS_FOR_DATA}, {d_type}]"
-    data_results[key] = current_results
+    #append concurrency results to results so far
+    results_so_far["total"] = total_results
+    append_results(results_so_far)
 
-#append data results to results so far
-results_so_far["data"] = data_results
-file = open(RESULTS_FILE, "w")
-file.write(json.dumps(results_so_far, indent=4))
-file.close()
+
+
+# TEST CPUS
+def test_cpus(data_len_for_cpus, data_type_for_cpus, \
+                cpus = [1, 2, 4, 8], \
+                concurrency_for_cpus = 20, \
+                total_for_cpus = 1000):
+
+    ghz_json = {
+        "concurrency": concurrency_for_cpus,
+        "total": total_for_cpus
+    }
+
+    print(f"Testing cpus with {concurrency_for_cpus} concurrency, {total_for_cpus} calls and {data_type_for_cpus} data")
+
+    results_so_far = read_results_so_far()
+    cpus_results = {}
+
+    for cpu in cpus:
+        # generate random data
+        if data_type_for_cpus[:23] == "float_number_list_type_":
+            data_for_cpus = [generate_float_number_list_data(data_len_for_cpus)]
+        else:
+            data_for_cpus = [generate_long_string_data(data_len_for_cpus)]
+
+        
+        # run tests
+        ghz_json["cpus"] = cpu
+        ghz_json["data"] = data_for_cpus
+        write_ghz_json(ghz_json)
+        os.system(PATH_TO_EXE+OPTIONS)
+
+        # get results
+        current_results = read_current_results()
+
+        # append results to cpu results
+        key = f"[{total_for_cpus}, {concurrency_for_cpus}, {cpu}, {data_type_for_cpus}]"
+        cpus_results[key] = current_results
+
+    #append cpu results to results so far
+    results_so_far["cpus"] = cpus_results
+    append_results(results_so_far)
+
+
+
+# TEST DATA
+def test_data(len_for_float_number_data_type = [10, 100, 1000, 10000], \
+            len_for_long_string_data_type = [10, 100, 1000, 10000], \
+            concurrency_for_data = 20, total_for_data = 1000, \
+            cpus_for_data = 2):
+    print(f"Testing data with {concurrency_for_data} concurrency, {total_for_data} calls and {cpus_for_data} cpus")
+    data = {}
+
+    for length in len_for_float_number_data_type:
+        data[f"float_number_list_type_{length}"] = [generate_float_number_list_data(length)]
+    
+    for length in len_for_long_string_data_type:
+        data[f"long_string_type_{length}"] = [generate_long_string_data(length)]
+
+    ghz_json = {
+        "concurrency": concurrency_for_data,
+        "total": total_for_data,
+        "cpus": cpus_for_data
+    }
+
+    results_so_far = read_results_so_far()
+    data_results = {}
+
+    for d_type, d in data.items():
+        # run tests
+        ghz_json["data"] = d
+        write_ghz_json(ghz_json)
+        os.system(PATH_TO_EXE+OPTIONS)
+
+        # get results
+        current_results = read_current_results()
+
+        # append results to data results
+        key = f"[{total_for_data}, {concurrency_for_data}, {cpus_for_data}, {d_type}]"
+        data_results[key] = current_results
+
+    #append data results to results so far
+    results_so_far["data"] = data_results
+    append_results(results_so_far)
+
+
+
+# CALL FUNCTIONS
+# concurrency
+data_len_for_concurrency = 100
+data_type_for_concurrency = f"float_number_list_type_{data_len_for_concurrency}"
+test_concurrency(data_len_for_concurrency, data_type_for_concurrency)
+
+# total
+data_len_for_total = 100
+data_type_for_total = f"float_number_list_type_{data_len_for_total}"
+test_total(data_len_for_total, data_type_for_total)
+
+# cpus
+data_len_for_cpus = 100
+data_type_for_cpus = f"float_number_list_type_{data_len_for_cpus}"
+test_cpus(data_len_for_cpus, data_type_for_cpus)
+
+# data
+test_data()
