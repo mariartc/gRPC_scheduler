@@ -55,9 +55,14 @@ def make_plots(changing_variable):
         xlabel = "Data type"
         kind = "bar"
 
-    average_latency = [results[changing_variable][i]["average"]/1000000 for i in keys]
-    total_time = [results[changing_variable][i]["total"]/1000000 for i in keys]
-    rps = [results[changing_variable][i]["rps"] for i in keys]
+    average_latency = []
+    total_time = []
+    rps = []
+
+    for i in keys:
+        average_latency.append(sum([results[changing_variable][i][str(j+1)]["average"] for j in range(10)])/(10*1000000))
+        total_time.append(sum([results[changing_variable][i][str(j+1)]["total"] for j in range(10)])/(10*1000000))
+        rps.append(sum([results[changing_variable][i][str(j+1)]["rps"] for j in range(10)])/10)
 
     plot(title="Average latency"+title, \
         x=x, y=average_latency, xlabel=xlabel, \

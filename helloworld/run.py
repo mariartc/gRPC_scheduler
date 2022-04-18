@@ -54,12 +54,22 @@ def append_results(results):
     file.write(json.dumps(results, indent=4))
     file.close()
 
+def extract_information(results):
+    return {
+        "options": results["options"],
+        "total": results["total"],
+        "average": results["average"],
+        "fastest": results["fastest"],
+        "slowest": results["slowest"],
+        "rps": results["rps"],
+    }
+
 
 
 
 # TEST CONCURRENCY
 def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
-                    concurrency = [1, 5, 10, 50, 100, 150, 200], \
+                    times_so_far, concurrency = [1, 5, 10, 50, 100, 150, 200], \
                     total_for_concurrency = 1000, cpus_for_concurrency = 2):
     ghz_json = {
         "total": total_for_concurrency,
@@ -69,7 +79,8 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
     print(f"Testing concurrency with {total_for_concurrency} calls, {cpus_for_concurrency} cpus and {data_type_for_concurrency} data")
 
     results_so_far = read_results_so_far()
-    concurrency_results = {}
+    if times_so_far == 1:
+        results_so_far["concurrency"] = {}
 
     for c in concurrency:
         # generate random data
@@ -77,7 +88,7 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
             data_for_concurrency = [generate_float_number_list_data(data_len_for_concurrency)]
         else:
             data_for_concurrency = [generate_long_string_data(data_len_for_concurrency)]
-
+            
         # run tests
         ghz_json["concurrency"] = c
         ghz_json["data"] = data_for_concurrency
@@ -89,19 +100,21 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
 
         # append results to concurrency results
         key = f"[{total_for_concurrency}, {c}, {cpus_for_concurrency}, {data_type_for_concurrency}]"
-        concurrency_results[key] = current_results
+
+        if times_so_far == 1:
+            results_so_far["concurrency"][key] = {}
+        results_so_far["concurrency"][key][str(times_so_far)] = extract_information(current_results)
 
     #append concurrency results to results so far
-    results_so_far["concurrency"] = concurrency_results
     append_results(results_so_far)
 
 
 
 # TEST TOTAL
-def test_total(data_len_for_total, data_type_for_total, \
+def test_total(data_len_for_total, data_type_for_total, times_so_far, \
                 total = [100, 1000, 10000, 100000, 500000], \
-                    concurrency_for_total = 20, \
-                    cpus_for_total = 2):
+                concurrency_for_total = 20, \
+                cpus_for_total = 2):
 
     ghz_json = {
         "concurrency": concurrency_for_total,
@@ -111,7 +124,8 @@ def test_total(data_len_for_total, data_type_for_total, \
     print(f"Testing total calls with {concurrency_for_total} concurrency, {cpus_for_total} cpus and {data_type_for_total} data")
 
     results_so_far = read_results_so_far()
-    total_results = {}
+    if times_so_far == 1:
+        results_so_far["total"] = {}
 
     for n in total:
         # generate random data
@@ -131,17 +145,19 @@ def test_total(data_len_for_total, data_type_for_total, \
 
         # append results to concurrency results
         key = f"[{n}, {concurrency_for_total}, {cpus_for_total}, {data_type_for_total}]"
-        total_results[key] = current_results
+
+        if times_so_far == 1:
+            results_so_far["total"][key] = {}
+        results_so_far["total"][key][str(times_so_far)] = extract_information(current_results)
 
     #append concurrency results to results so far
-    results_so_far["total"] = total_results
     append_results(results_so_far)
 
 
 
 # TEST CPUS
 def test_cpus(data_len_for_cpus, data_type_for_cpus, \
-                cpus = [1, 2, 4, 8], \
+                times_so_far, cpus = [1, 2, 4, 8], \
                 concurrency_for_cpus = 20, \
                 total_for_cpus = 1000):
 
@@ -153,7 +169,8 @@ def test_cpus(data_len_for_cpus, data_type_for_cpus, \
     print(f"Testing cpus with {concurrency_for_cpus} concurrency, {total_for_cpus} calls and {data_type_for_cpus} data")
 
     results_so_far = read_results_so_far()
-    cpus_results = {}
+    if times_so_far == 1:
+        results_so_far["cpus"] = {}
 
     for cpu in cpus:
         # generate random data
@@ -162,7 +179,6 @@ def test_cpus(data_len_for_cpus, data_type_for_cpus, \
         else:
             data_for_cpus = [generate_long_string_data(data_len_for_cpus)]
 
-        
         # run tests
         ghz_json["cpus"] = cpu
         ghz_json["data"] = data_for_cpus
@@ -174,16 +190,18 @@ def test_cpus(data_len_for_cpus, data_type_for_cpus, \
 
         # append results to cpu results
         key = f"[{total_for_cpus}, {concurrency_for_cpus}, {cpu}, {data_type_for_cpus}]"
-        cpus_results[key] = current_results
+
+        if times_so_far == 1:
+            results_so_far["cpus"][key] = {}
+        results_so_far["cpus"][key][str(times_so_far)] = extract_information(current_results)
 
     #append cpu results to results so far
-    results_so_far["cpus"] = cpus_results
     append_results(results_so_far)
 
 
 
 # TEST DATA
-def test_data(len_for_float_number_data_type = [10, 100, 1000, 10000], \
+def test_data(times_so_far, len_for_float_number_data_type = [10, 100, 1000, 10000], \
             len_for_long_string_data_type = [10, 100, 1000, 10000], \
             concurrency_for_data = 20, total_for_data = 1000, \
             cpus_for_data = 2):
@@ -203,7 +221,8 @@ def test_data(len_for_float_number_data_type = [10, 100, 1000, 10000], \
     }
 
     results_so_far = read_results_so_far()
-    data_results = {}
+    if times_so_far == 1:
+        results_so_far["data"] = {}
 
     for d_type, d in data.items():
         # run tests
@@ -216,10 +235,12 @@ def test_data(len_for_float_number_data_type = [10, 100, 1000, 10000], \
 
         # append results to data results
         key = f"[{total_for_data}, {concurrency_for_data}, {cpus_for_data}, {d_type}]"
-        data_results[key] = current_results
+
+        if times_so_far == 1:
+            results_so_far["data"][key] = {}
+        results_so_far["data"][key][str(times_so_far)] = extract_information(current_results)
 
     #append data results to results so far
-    results_so_far["data"] = data_results
     append_results(results_so_far)
 
 
@@ -228,17 +249,21 @@ def test_data(len_for_float_number_data_type = [10, 100, 1000, 10000], \
 # concurrency
 data_len_for_concurrency = 100
 data_type_for_concurrency = f"float_number_list_type_{data_len_for_concurrency}"
-test_concurrency(data_len_for_concurrency, data_type_for_concurrency)
+for i in range(10):
+    test_concurrency(data_len_for_concurrency, data_type_for_concurrency, i+1)
 
 # total
 data_len_for_total = 100
 data_type_for_total = f"float_number_list_type_{data_len_for_total}"
-test_total(data_len_for_total, data_type_for_total)
+for i in range(10):
+    test_total(data_len_for_total, data_type_for_total, i+1)
 
 # cpus
 data_len_for_cpus = 100
 data_type_for_cpus = f"float_number_list_type_{data_len_for_cpus}"
-test_cpus(data_len_for_cpus, data_type_for_cpus)
+for i in range(10):
+    test_cpus(data_len_for_cpus, data_type_for_cpus, i+1)
 
 # data
-test_data()
+for i in range(10):
+    test_data(i+1)
