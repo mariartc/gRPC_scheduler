@@ -62,6 +62,7 @@ def extract_information(results):
         "fastest": results["fastest"],
         "slowest": results["slowest"],
         "rps": results["rps"],
+        "details": results["details"],
     }
 
 
@@ -79,15 +80,23 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
     print(f"Testing concurrency with {total_for_concurrency} calls, {cpus_for_concurrency} cpus and {data_type_for_concurrency} data")
 
     results_so_far = read_results_so_far()
-    if times_so_far == 1:
+    if "concurrency" not in results_so_far:
         results_so_far["concurrency"] = {}
 
     for c in concurrency:
         # generate random data
         if data_type_for_concurrency[:23] == "float_number_list_type_":
             data_for_concurrency = [generate_float_number_list_data(data_len_for_concurrency)]
-        else:
+        elif data_type_for_concurrency[:17] == "long_string_type_":
             data_for_concurrency = [generate_long_string_data(data_len_for_concurrency)]
+        else:
+            data_for_concurrency = []
+            for i in range(total_for_concurrency):
+                if i % 2 == 0:
+                    data_for_concurrency.append(generate_float_number_list_data(data_len_for_concurrency[0]))
+                else:
+                    data_for_concurrency.append(generate_long_string_data(data_len_for_concurrency[1]))
+
             
         # run tests
         ghz_json["concurrency"] = c
@@ -101,7 +110,7 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
         # append results to concurrency results
         key = f"[{total_for_concurrency}, {c}, {cpus_for_concurrency}, {data_type_for_concurrency}]"
 
-        if times_so_far == 1:
+        if key not in results_so_far["concurrency"]:
             results_so_far["concurrency"][key] = {}
         results_so_far["concurrency"][key][str(times_so_far)] = extract_information(current_results)
 
@@ -124,15 +133,22 @@ def test_total(data_len_for_total, data_type_for_total, times_so_far, \
     print(f"Testing total calls with {concurrency_for_total} concurrency, {cpus_for_total} cpus and {data_type_for_total} data")
 
     results_so_far = read_results_so_far()
-    if times_so_far == 1:
+    if "total" not in results_so_far:
         results_so_far["total"] = {}
 
     for n in total:
         # generate random data
         if data_type_for_total[:23] == "float_number_list_type_":
             data_for_total = [generate_float_number_list_data(data_len_for_total)]
-        else:
+        elif data_type_for_total[:17] == "long_string_type_":
             data_for_total = [generate_long_string_data(data_len_for_total)]
+        else:
+            data_for_total = []
+            for i in range(n):
+                if i % 2 == 0:
+                    data_for_total.append(generate_float_number_list_data(data_len_for_total[0]))
+                else:
+                    data_for_total.append(generate_long_string_data(data_len_for_total[1]))
 
         # run tests
         ghz_json["total"] = n
@@ -146,7 +162,7 @@ def test_total(data_len_for_total, data_type_for_total, times_so_far, \
         # append results to concurrency results
         key = f"[{n}, {concurrency_for_total}, {cpus_for_total}, {data_type_for_total}]"
 
-        if times_so_far == 1:
+        if key not in results_so_far["total"]:
             results_so_far["total"][key] = {}
         results_so_far["total"][key][str(times_so_far)] = extract_information(current_results)
 
@@ -169,15 +185,22 @@ def test_cpus(data_len_for_cpus, data_type_for_cpus, \
     print(f"Testing cpus with {concurrency_for_cpus} concurrency, {total_for_cpus} calls and {data_type_for_cpus} data")
 
     results_so_far = read_results_so_far()
-    if times_so_far == 1:
+    if "cpus" not in results_so_far:
         results_so_far["cpus"] = {}
 
     for cpu in cpus:
         # generate random data
         if data_type_for_cpus[:23] == "float_number_list_type_":
             data_for_cpus = [generate_float_number_list_data(data_len_for_cpus)]
-        else:
+        elif data_type_for_cpus[:17] == "long_string_type_":
             data_for_cpus = [generate_long_string_data(data_len_for_cpus)]
+        else:
+            data_for_cpus = []
+            for i in range(total_for_cpus):
+                if i % 2 == 0:
+                    data_for_cpus.append(generate_float_number_list_data(data_len_for_cpus[0]))
+                else:
+                    data_for_cpus.append(generate_long_string_data(data_len_for_cpus[1]))
 
         # run tests
         ghz_json["cpus"] = cpu
@@ -191,7 +214,7 @@ def test_cpus(data_len_for_cpus, data_type_for_cpus, \
         # append results to cpu results
         key = f"[{total_for_cpus}, {concurrency_for_cpus}, {cpu}, {data_type_for_cpus}]"
 
-        if times_so_far == 1:
+        if key not in results_so_far["cpus"]:
             results_so_far["cpus"][key] = {}
         results_so_far["cpus"][key][str(times_so_far)] = extract_information(current_results)
 
@@ -221,7 +244,7 @@ def test_data(times_so_far, len_for_float_number_data_type = [10, 100, 1000, 100
     }
 
     results_so_far = read_results_so_far()
-    if times_so_far == 1:
+    if "data" not in results_so_far:
         results_so_far["data"] = {}
 
     for d_type, d in data.items():
@@ -236,7 +259,7 @@ def test_data(times_so_far, len_for_float_number_data_type = [10, 100, 1000, 100
         # append results to data results
         key = f"[{total_for_data}, {concurrency_for_data}, {cpus_for_data}, {d_type}]"
 
-        if times_so_far == 1:
+        if key not in results_so_far["data"]:
             results_so_far["data"][key] = {}
         results_so_far["data"][key][str(times_so_far)] = extract_information(current_results)
 
@@ -245,25 +268,41 @@ def test_data(times_so_far, len_for_float_number_data_type = [10, 100, 1000, 100
 
 
 
+# TEST MULTIPLEXING
+def test_multiplexing():
+    data_len_float_number_list = 100
+    data_len_long_string = 100
+    data_type_long_string = f"long_string_type_{data_len_long_string}"
+    data_type_float_number_list = f"float_number_list_type_{data_len_float_number_list}"
+
+    # concurrency
+    for i in range(2):
+        test_concurrency(data_len_float_number_list, data_type_float_number_list, i+1)
+        test_concurrency(data_len_long_string, data_type_long_string, i+1)
+        test_concurrency([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
+
 # CALL FUNCTIONS
-# concurrency
-data_len_for_concurrency = 100
-data_type_for_concurrency = f"float_number_list_type_{data_len_for_concurrency}"
-for i in range(10):
-    test_concurrency(data_len_for_concurrency, data_type_for_concurrency, i+1)
+# # concurrency
+# data_len_for_concurrency = 100
+# data_type_for_concurrency = f"float_number_list_type_{data_len_for_concurrency}"
+# for i in range(10):
+#     test_concurrency(data_len_for_concurrency, data_type_for_concurrency, i+1)
 
-# total
-data_len_for_total = 100
-data_type_for_total = f"float_number_list_type_{data_len_for_total}"
-for i in range(10):
-    test_total(data_len_for_total, data_type_for_total, i+1)
+# # total
+# data_len_for_total = 100
+# data_type_for_total = f"float_number_list_type_{data_len_for_total}"
+# for i in range(10):
+#     test_total(data_len_for_total, data_type_for_total, i+1)
 
-# cpus
-data_len_for_cpus = 100
-data_type_for_cpus = f"float_number_list_type_{data_len_for_cpus}"
-for i in range(10):
-    test_cpus(data_len_for_cpus, data_type_for_cpus, i+1)
+# # cpus
+# data_len_for_cpus = 100
+# data_type_for_cpus = f"float_number_list_type_{data_len_for_cpus}"
+# for i in range(10):
+#     test_cpus(data_len_for_cpus, data_type_for_cpus, i+1)
 
-# data
-for i in range(10):
-    test_data(i+1)
+# # data
+# for i in range(10):
+#     test_data(i+1)
+
+# multiplexing
+test_multiplexing()
