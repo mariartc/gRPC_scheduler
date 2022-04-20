@@ -276,10 +276,22 @@ def test_multiplexing():
     data_type_float_number_list = f"float_number_list_type_{data_len_float_number_list}"
 
     # concurrency
-    for i in range(2):
+    for i in range(10):
         test_concurrency(data_len_float_number_list, data_type_float_number_list, i+1)
         test_concurrency(data_len_long_string, data_type_long_string, i+1)
         test_concurrency([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
+
+    # total
+    for i in range(10):
+        test_total(data_len_float_number_list, data_type_float_number_list, i+1)
+        test_total(data_len_long_string, data_type_long_string, i+1)
+        test_total([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
+
+    # cpus
+    for i in range(10):
+        test_cpus(data_len_float_number_list, data_type_float_number_list, i+1)
+        test_cpus(data_len_long_string, data_type_long_string, i+1)
+        test_cpus([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
 
 # CALL FUNCTIONS
 # # concurrency
