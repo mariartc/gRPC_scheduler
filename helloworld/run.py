@@ -121,7 +121,7 @@ def test_concurrency(data_len_for_concurrency, data_type_for_concurrency, \
 
 # TEST TOTAL
 def test_total(data_len_for_total, data_type_for_total, times_so_far, \
-                total = [100, 1000, 10000, 100000, 500000], \
+                total = [100, 1000, 10000, 100000], \
                 concurrency_for_total = 20, \
                 cpus_for_total = 2):
 
@@ -271,24 +271,24 @@ def test_data(times_so_far, len_for_float_number_data_type = [10, 100, 1000, 100
 # TEST MULTIPLEXING
 def test_multiplexing():
     data_len_float_number_list = 100
-    data_len_long_string = 100
+    data_len_long_string = 1000
     data_type_long_string = f"long_string_type_{data_len_long_string}"
     data_type_float_number_list = f"float_number_list_type_{data_len_float_number_list}"
 
     # concurrency
-    for i in range(10):
+    for i in range(5):
         test_concurrency(data_len_float_number_list, data_type_float_number_list, i+1)
         test_concurrency(data_len_long_string, data_type_long_string, i+1)
         test_concurrency([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
 
     # total
-    for i in range(10):
+    for i in range(5):
         test_total(data_len_float_number_list, data_type_float_number_list, i+1)
         test_total(data_len_long_string, data_type_long_string, i+1)
         test_total([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)
 
     # cpus
-    for i in range(10):
+    for i in range(5):
         test_cpus(data_len_float_number_list, data_type_float_number_list, i+1)
         test_cpus(data_len_long_string, data_type_long_string, i+1)
         test_cpus([data_len_float_number_list, data_len_long_string], "multiplexing", i+1)

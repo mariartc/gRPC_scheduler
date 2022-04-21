@@ -206,7 +206,6 @@ def make_plots_multiplexing(changing_variable, times=10):
 # make_plots("data")
 
 # MULTIPLEXING
-make_plots_multiplexing("concurrency")
-make_plots_multiplexing("total")
-make_plots_multiplexing("cpus")
-make_plots_multiplexing("data")
+make_plots_multiplexing("concurrency", 5)
+make_plots_multiplexing("total", 5)
+make_plots_multiplexing("cpus", 5)
