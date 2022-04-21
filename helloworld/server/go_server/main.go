@@ -203,7 +203,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	s := grpc.NewServer()
+
+	// set maximum number of concurrent streams in tcp connection
+	opts := []grpc.ServerOption{grpc.MaxConcurrentStreams(4)}
+
+	s := grpc.NewServer(opts...)
 	pb.RegisterGreeterServer(s, &server{})
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
