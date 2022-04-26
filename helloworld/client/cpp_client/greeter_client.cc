@@ -1,14 +1,13 @@
 #include <chrono>
-#include <thread>
-#include <sys/types.h>
-#include <sys/wait.h>
+#include <grpcpp/grpcpp.h>
 #include <iostream>
 #include <memory>
-#include <string>
-
 #include <signal.h>
-
-#include <grpcpp/grpcpp.h>
+#include <string>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <thread>
+#include <vector>
 
 #ifdef BAZEL_BUILD
 #include "examples/protos/helloworld.grpc.pb.h"
@@ -18,153 +17,262 @@
 
 using grpc::Channel;
 using grpc::ClientContext;
-using grpc::Status;
 using grpc::ClientWriter;
+using grpc::Status;
+using helloworld::FloatNumberList;
+using helloworld::FloatNumber;
 using helloworld::Greeter;
 using helloworld::HelloReply;
 using helloworld::HelloRequest;
-using helloworld::FloatNumberList;
-using helloworld::FloatNumber;
 using helloworld::IntNumber;
 using helloworld::LongString;
+
 using namespace std;
 
+vector<int> priorities;
+vector<int> pids;
+int pd[2];
+
+
 class GreeterClient {
- public:
-  GreeterClient(shared_ptr<Channel> channel)
+  public:
+    GreeterClient(shared_ptr<Channel> channel)
       : stub_(Greeter::NewStub(channel)) {}
 
-  // Assembles the client's payload, sends it and presents the response back
-  // from the server.
-  string SayHello(const string& user) {
-    // Data we are sending to the server.
-    HelloRequest request;
-    request.set_name(user);
+    string SayHello(const string& user) {
+      HelloRequest request;
+      request.set_name(user);
 
-    // Container for the data we expect from the server.
-    HelloReply reply;
+      HelloReply reply;
+      ClientContext context;
+      
+      Status status = stub_->SayHello(&context, request, &reply);
 
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
-    ClientContext context;
-
-    // The actual RPC.
-    Status status = stub_->SayHello(&context, request, &reply);
-
-    // Act upon its status.
-    if (status.ok()) {
-      return reply.message();
-    } else {
-      cout << status.error_code() << ": " << status.error_message()
-                << endl;
-      return "RPC failed";
-    }
-  }
-
-  FloatNumber ComputeMeanRepeated(float *arr, int arr_length) {
-    FloatNumberList float_arr;
-    for(int i = 0; i < arr_length; i++) {
-      float_arr.add_value(arr[i]);
-    }
-    ClientContext context;
-    FloatNumber reply;
-    Status status = stub_->ComputeMeanRepeated(&context, float_arr, &reply);
-    return reply;
-  }
-
-  FloatNumber ComputeMean(int *arr, int arr_length) {
-    ClientContext context;
-    FloatNumber reply;
-    
-    std::unique_ptr<ClientWriter<IntNumber> > writer(
-        stub_->ComputeMean(&context, &reply));
-
-    for (int i = 0; i < arr_length; i++){
-      IntNumber int_number;
-      int_number.set_value(arr[i]);
-      // cout << "Thread " << getpid() << " sending " << arr[i] << endl;
-      if (!writer->Write(int_number)) {
-        cout << "Broken stream" << endl;
-        break;
+      if (status.ok()) {
+        return reply.message();
+      } else {
+        cout << status.error_code() << ": " << status.error_message()
+                  << endl;
+        return "RPC failed";
       }
     }
-    writer->WritesDone();
-    Status status = writer->Finish();
-    if (status.ok()) {
+
+
+    FloatNumber ComputeMeanRepeated(float *arr, int arr_length) {
+      FloatNumberList float_arr;
+      ClientContext context;
+      FloatNumber reply;
+
+      for(int i = 0; i < arr_length; i++) 
+        float_arr.add_value(arr[i]);
+      
+      Status status = stub_->ComputeMeanRepeated(&context, float_arr, &reply);
+
       return reply;
-    } else {
-      FloatNumber error;
-      error.set_value(-1);
-      return error;
     }
-  }
 
-  LongString SendLongString(string str) {
-    ClientContext context;
-    LongString lng_str;
-    lng_str.set_str(str);
-    LongString reply;
-    // cout << "Thread " << getpid() << " sending " << str << endl;
 
-    Status status = stub_->SendLongString(&context, lng_str, &reply);
-    return reply;
-  }
+    FloatNumber ComputeMean(int *arr, int arr_length) {
+      ClientContext context;
+      FloatNumber reply;
+      
+      std::unique_ptr<ClientWriter<IntNumber> > writer(
+          stub_->ComputeMean(&context, &reply));
+      cout << getpid() << " starts sending array" << endl;
 
- private:
-  unique_ptr<Greeter::Stub> stub_;
+      for (int i = 0; i < arr_length; i++){
+        IntNumber int_number;
+        int_number.set_value(arr[i]);
+        if (!writer->Write(int_number)) {
+          cout << "Broken stream" << endl;
+          break;
+        }
+      }
+
+      writer->WritesDone();
+      Status status = writer->Finish();
+
+      if (status.ok()) {
+        return reply;
+      } else {
+        FloatNumber error;
+        error.set_value(-1);
+        return error;
+      }
+    }
+
+
+    LongString SendLongString(string str) {
+      ClientContext context;
+      LongString lng_str;
+      lng_str.set_str(str);
+      LongString reply;
+      
+      cout << getpid() << " sending " << str << endl;
+
+      Status status = stub_->SendLongString(&context, lng_str, &reply);
+      return reply;
+    }
+
+  private:
+    unique_ptr<Greeter::Stub> stub_;
 };
 
-int main(int argc, char** argv) {
-  // Instantiate the client. It requires a channel, out of which the actual RPCs
-  // are created. This channel models a connection to an endpoint specified by
-  // the argument "--target=" which is the only expected argument.
-  // We indicate that the channel isn't authenticated (use of
-  // InsecureChannelCredentials()).
-  string target_str;
-  string arg_str("--target");
-  if (argc > 1) {
-    string arg_val = argv[1];
-    size_t start_pos = arg_val.find(arg_str);
-    if (start_pos != string::npos) {
-      start_pos += arg_str.size();
-      if (arg_val[start_pos] == '=') {
-        target_str = arg_val.substr(start_pos + 1);
-      } else {
-        cout << "The only correct argument syntax is --target="
-                  << endl;
-        return 0;
-      }
-    } else {
-      cout << "The only acceptable argument is --target=" << endl;
-      return 0;
-    }
-  } else {
-    target_str = "localhost:50051";
+
+void run_rpc(int r, string long_str, int *arr, int arr_length) {
+  GreeterClient greeter(
+    grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
+  cout << getpid() << " going to sleep..." << endl;
+  // Wait for scheduler to notify
+  raise(SIGSTOP);
+  cout << getpid() << " woke up! " << endl;
+  if (r == 0){
+      LongString lng_str = greeter.SendLongString(long_str);
+      cout << getpid() << " got long string: " << lng_str.str() << endl;
   }
-  
+  else if (r == 1){
+    FloatNumber mean = greeter.ComputeMean(arr, arr_length);
+    cout << getpid() << " got mean: " << mean.value() << endl;
+  }
+}
+
+
+int get_maximum_priority(){
+  if (priorities.size() == 0) return -1;
+
+  int max_i = -1, max = 0, n = priorities.size();
+  for(int i = 0; i < n; i++){
+    if (priorities[i] > max){
+      max_i = i;
+      max = priorities[i];
+    }
+  }
+  return pids[max_i];
+}
+
+
+void schedule(){
+  int max_pid, running_pid = -1;
+  while(1){
+    max_pid = get_maximum_priority();
+    if (max_pid != -1 and max_pid != running_pid){
+      if (running_pid != -1){
+        kill(running_pid, SIGSTOP);
+        cout << getpid() << " sent " << running_pid << " to sleep" << endl;
+      }
+      running_pid = max_pid;
+      kill(max_pid, SIGCONT);
+    }
+  }
+}
+
+
+void subscribe_process(int priority, int pid){
+  priorities.push_back(priority);
+  pids.push_back(pid);
+}
+
+
+void run_processes(int scheduler_pid){
+  string str = "hello";
+  int priority;
+  int arr_length = 1000;
+  int arr[arr_length];
+  fill_n(arr, arr_length, 3);
+
+  pid_t C1, C2;
+  C1 = fork();
+  if (C1 == 0){
+    run_rpc(1, "", arr, arr_length);
+  }
+  else {
+    // Subscribe C1 to scheduler
+    waitpid(C1, NULL, WUNTRACED);
+    priority = 1;
+    write(pd[1], &C1, sizeof(int));
+    write(pd[1], &priority, sizeof(int));
+    // Send signal to scheduler to read the pipe
+    kill(scheduler_pid, SIGUSR1);
+    // Wait a little so that the first rpc starts sending
+    // in order to observe the switching between processes
+    this_thread::sleep_for(std::chrono::milliseconds(10));
+    C2 = fork();
+    if (C2 == 0){
+      run_rpc(0, str, NULL, -1);
+    }
+    else{
+      // Subscribe C2 to scheduler
+      waitpid(C2, NULL, WUNTRACED);
+      priority = 2;
+      write(pd[1], &C2, sizeof(int));
+      write(pd[1], &priority, sizeof(int));
+      // Send signal to scheduler to read the pipe
+      kill(scheduler_pid, SIGUSR1);
+
+      // Wait for a process to terminate so that
+      // the scheduler removes its priority and pid
+      pid_t F1 = wait(NULL);
+      write(pd[1], &F1, sizeof(int));
+      kill(scheduler_pid, SIGUSR2);
+      F1 = wait(NULL);
+      write(pd[1], &F1, sizeof(int));
+      kill(scheduler_pid, SIGUSR2);
+    }
+  }
+}
+
+
+void remove_priority(int pid){
+  cout << getpid() << " removing priority and pid of " << pid << endl;
+  int n = pids.size();
+  for(int i = 0; i < n; i++){
+    if (pids[i] == pid){
+      pids.erase(pids.begin() + i);
+      priorities.erase(priorities.begin() + i);
+      return;
+    }
+  }
+}
+
+
+// SIGUSR1 and SIGUSR2 handler
+void read_from_pipe(int a){
+  int priority, pid;
+  if (a == SIGUSR1){
+    read(pd[0], &pid, sizeof(int));
+    read(pd[0], &priority, sizeof(int));
+    cout << getpid() << " reading process " << pid << endl;
+    subscribe_process(priority, pid);
+  }
+  else if (a == SIGUSR2){
+    read(pd[0], &pid, sizeof(int));
+    cout << getpid() << " reading finished process " << pid << endl;
+    remove_priority(pid);
+  }
+}
+
+
+int main(int argc, char** argv) {
+  // Creating pipes
+  if (pipe(pd) < 0)
+    exit(1);
+
+  cout << getpid() << " created pipes and starting... " << endl;
+
+  pid_t scheduler_pid = getpid();
+  // Create proccess to run the rpc calls
   pid_t C1 = fork();
   if (C1 == 0){
-    GreeterClient greeter(
-      grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-    int arr[3] = {1, 2, 3};
-    FloatNumber mean = greeter.ComputeMean(arr, 3);
-    // cout << "Thread " << getpid() << " got mean: " << mean.value() << endl;
+    run_processes(scheduler_pid);
   }
   else{
-    pid_t C2 = fork();
-    if (C2 == 0){
-      GreeterClient greeter(
-        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-      // std::this_thread::sleep_for(std::chrono::milliseconds(2));
-      // kill(C1, SIGSTOP);
-      LongString lng_str = greeter.SendLongString("aaaaaaaaaa");
-      // cout << "Thread " << getpid() << " got long string: " << lng_str.str() << endl;
-    }
-    else {
-      // waitpid(C2, NULL, WUNTRACED);
-      // kill(C1, SIGCONT);
-    }
-  }
+    // Define handlers
+    struct sigaction action;
+    action.sa_handler = &read_from_pipe;
+    action.sa_flags = SA_RESTART;
+    sigaction(SIGUSR1, &action, NULL);
+    sigaction(SIGUSR2, &action, NULL);
 
-  return 0;
+    schedule();
+  }
 }
