@@ -205,7 +205,7 @@ func main() {
 	}
 
 	// set maximum number of concurrent streams in tcp connection
-	opts := []grpc.ServerOption{grpc.MaxConcurrentStreams(4)}
+	opts := []grpc.ServerOption{grpc.MaxConcurrentStreams(1)}
 
 	s := grpc.NewServer(opts...)
 	pb.RegisterGreeterServer(s, &server{})

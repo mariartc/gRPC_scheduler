@@ -1,7 +1,7 @@
-helloworld/client/__pycache__
+helloworld/client/python_client/__pycache__
 helloworld/server/node_server/node_modules
-helloworld/client/helloworld_pb2_grpc.py
-helloworld/client/helloworld_pb2.py
+helloworld/client/python_client/helloworld_pb2_grpc.py
+helloworld/client/python_client/helloworld_pb2.py
 helloworld/client/long_string.txt
 helloworld/client/long_array.txt
 helloworld/ghz.json
