@@ -1,10 +1,7 @@
-#include <chrono>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
-#include <memory>
-#include <signal.h>
+#include <netdb.h>
 #include <string>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <thread>
 #include <vector>
@@ -29,11 +26,13 @@ using helloworld::LongString;
 
 using namespace std;
 
-vector<int> priorities;
-vector<int> pids;
-int pd[2];
-int max_pid, running_pid = -1;
+#define TCP_PORT    35001
+#define HOSTNAME    "localhost"
 
+int sd;
+char buf[100];
+struct hostent *hp;
+struct sockaddr_in sa;
 
 class GreeterClient {
   public:
@@ -120,6 +119,23 @@ class GreeterClient {
 };
 
 
+void write_to_socket(string str){
+    str.copy(buf, str.length());
+    buf[str.length()] = '\0';
+
+	  ssize_t n;
+		n = write(sd, buf, sizeof(buf));
+
+    if(n < 0){
+      cout << getpid() << " something went wrong with writing "
+            << str << " to socket" << endl;
+      return;
+    }
+
+    cout << getpid() << " wrote " << buf << " to socket" << endl;
+}
+
+
 void run_rpc(int r, string long_str, int *arr, int arr_length) {
   GreeterClient greeter(
     grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
@@ -138,43 +154,6 @@ void run_rpc(int r, string long_str, int *arr, int arr_length) {
 }
 
 
-int get_maximum_priority(){
-  if (priorities.size() == 0) return -1;
-
-  int max_i = -1, max = 0, n = priorities.size();
-  for(int i = 0; i < n; i++){
-    if (priorities[i] > max){
-      max_i = i;
-      max = priorities[i];
-    }
-  }
-  return pids[max_i];
-}
-
-
-void schedule(){
-  while(1){
-    max_pid = get_maximum_priority();
-    if (max_pid != -1 and max_pid != running_pid){
-      if (running_pid != -1){
-        kill(running_pid, SIGSTOP);
-        cout << getpid() << " sent " << running_pid << " to sleep" << endl;
-      }
-      running_pid = max_pid;
-      kill(max_pid, SIGCONT);
-    }
-  }
-}
-
-
-void subscribe_process(int priority, int pid){
-  priorities.push_back(priority);
-  pids.push_back(pid);
-  if (priority > max_pid)
-    max_pid = pid;
-}
-
-
 void run_processes(int scheduler_pid){
   string str = "hello";
   int priority;
@@ -188,11 +167,11 @@ void run_processes(int scheduler_pid){
     run_rpc(1, "", arr, arr_length);
   }
   else {
-    // Subscribe C1 to scheduler
+    // Wait fot C1 to fall asleep
     waitpid(C1, NULL, WUNTRACED);
+    // Subscribe C1 to scheduler
     priority = 1;
-    write(pd[1], &C1, sizeof(int));
-    write(pd[1], &priority, sizeof(int));
+    write_to_socket("subscribe" + to_string(C1) + ":" + to_string(priority));
     // Send signal to scheduler to read the pipe
     kill(scheduler_pid, SIGUSR1);
     // Wait a little so that the first rpc starts sending
@@ -203,79 +182,64 @@ void run_processes(int scheduler_pid){
       run_rpc(0, str, NULL, -1);
     }
     else{
-      // Subscribe C2 to scheduler
+      // Wait fot C2 to fall asleep
       waitpid(C2, NULL, WUNTRACED);
+      // Subscribe C2 to scheduler
       priority = 2;
-      write(pd[1], &C2, sizeof(int));
-      write(pd[1], &priority, sizeof(int));
+      write_to_socket("subscribe" + to_string(C2) + ":" + to_string(priority));
       // Send signal to scheduler to read the pipe
       kill(scheduler_pid, SIGUSR1);
 
       // Wait for a process to terminate so that
       // the scheduler removes its priority and pid
       pid_t F1 = wait(NULL);
-      write(pd[1], &F1, sizeof(int));
-      kill(scheduler_pid, SIGUSR2);
+      write_to_socket("remove" + to_string(F1));
+      kill(scheduler_pid, SIGUSR1);
       F1 = wait(NULL);
-      write(pd[1], &F1, sizeof(int));
-      kill(scheduler_pid, SIGUSR2);
+      write_to_socket("remove" + to_string(F1));
+      kill(scheduler_pid, SIGUSR1);
     }
   }
 }
 
 
-void remove_priority(int pid){
-  cout << getpid() << " removing priority and pid of " << pid << endl;
-  int n = pids.size();
-  for(int i = 0; i < n; i++){
-    if (pids[i] == pid){
-      pids.erase(pids.begin() + i);
-      priorities.erase(priorities.begin() + i);
-      break;
-    }
-  }
-  max_pid = get_maximum_priority();
-}
+bool connect_to_socket(){
+  // Create TCP/IP socket
+  if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+		perror("socket");
+		return false;
+	}
+  cout << getpid() << " created TCP socket\n";
 
+	// Look up remote hostname on DNS
+	if ( !(hp = gethostbyname(HOSTNAME))) {
+    cout << getpid() << " failed DNS lookup for host " << HOSTNAME << endl;
+		return false;
+	}
 
-// SIGUSR1 and SIGUSR2 handler
-void read_from_pipe(int a){
-  int priority, pid;
-  if (a == SIGUSR1){
-    read(pd[0], &pid, sizeof(int));
-    read(pd[0], &priority, sizeof(int));
-    cout << getpid() << " reading process " << pid << endl;
-    subscribe_process(priority, pid);
-  }
-  else if (a == SIGUSR2){
-    read(pd[0], &pid, sizeof(int));
-    cout << getpid() << " reading finished process " << pid << endl;
-    remove_priority(pid);
-  }
+	/* Connect to remote TCP port */
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(TCP_PORT);
+	memcpy(&sa.sin_addr.s_addr, hp->h_addr, sizeof(struct in_addr));
+  cout << getpid() << " connecting to remote host..." << endl;
+	if (connect(sd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
+		perror("connect");
+		return false;
+	}
+  cout << getpid() << " connected!" << endl;
+  return true;
 }
 
 
 int main(int argc, char** argv) {
-  // Creating pipes
-  if (pipe(pd) < 0)
+  if(argc == 1 || atoi(argv[1]) <= 0){
+		cout << "Usage: ./greeter_client <scheduler_pid>\n";
+		exit(0);
+	}
+
+  if(not connect_to_socket())
     exit(1);
 
-  cout << getpid() << " created pipes and starting... " << endl;
-
-  pid_t scheduler_pid = getpid();
-  // Create proccess to run the rpc calls
-  pid_t C1 = fork();
-  if (C1 == 0){
-    run_processes(scheduler_pid);
-  }
-  else{
-    // Define handlers
-    struct sigaction action;
-    action.sa_handler = &read_from_pipe;
-    action.sa_flags = SA_RESTART;
-    sigaction(SIGUSR1, &action, NULL);
-    sigaction(SIGUSR2, &action, NULL);
-
-    schedule();
-  }
+  int scheduler_pid = atoi(argv[1]);
+  run_processes(scheduler_pid);
 }
