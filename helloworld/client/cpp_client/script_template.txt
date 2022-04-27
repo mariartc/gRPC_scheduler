@@ -1,0 +1,2 @@
+compute_mean 1,2,3 1
+send_long_string hello 2

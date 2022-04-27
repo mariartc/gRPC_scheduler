@@ -20,7 +20,7 @@ char buf[100];
 
 vector<int> pids, priorities;
 int client_1, client_2, sd;
-int max_pid = -1, running_pid = -1;
+int max_pid = -1, running_pid = -1, max_priority = -1;
 struct sockaddr_in sa;
 socklen_t len;
 
@@ -35,6 +35,7 @@ int get_maximum_priority(){
             max = priorities[i];
         }
     }
+    max_priority = priorities[max_i];
     return pids[max_i];
 }
 
@@ -42,6 +43,11 @@ int get_maximum_priority(){
 void schedule(){
     while(1){
         max_pid = get_maximum_priority();
+        if (max_pid == 0){
+            for(int i = 0; i < pids.size(); i++){
+                cout << pids[i] << " " << priorities[i] << endl;
+            }
+        }
         if (max_pid != -1 and max_pid != running_pid){
             if (running_pid != -1){
                 kill(running_pid, SIGSTOP);
@@ -58,13 +64,14 @@ void schedule(){
 void subscribe_process(int priority, int pid){
     priorities.push_back(priority);
     pids.push_back(pid);
-    if (max_pid == -1 or priority > priorities[max_pid])
+    if (max_pid == -1 or priority > max_priority){
         max_pid = pid;
+        max_priority = priority;
+    }
 }
 
 
 void remove_priority(int pid){
-    cout << getpid() << " removing priority and pid of " << pid << endl;
     int n = pids.size();
     for(int i = 0; i < n; i++){
         if (pids[i] == pid){
@@ -117,11 +124,11 @@ void parse_buffer(ssize_t n){
             cout << getpid() << " read " << buf << "\n";
             int i = 0;
             char temp[10];
-            while(buf[6 + i] != ':'){
+            while(buf[6 + i] != '\0'){
                 memcpy(temp + i, buf + 6 + i, sizeof(char));
                 i++;
             }
-            char pid[i - 1];
+            char pid[i];
             memcpy(pid, temp, sizeof(pid));
             int int_pid = atoi(pid);
             printf("%d removing %d\n", getpid(), int_pid);
@@ -142,9 +149,6 @@ void read_from_socket(int a){
         parse_buffer(n);
         // n = read(client_2, buf, sizeof(buf));
         // parse_buffer(n);
-    }
-    if (a == SIGINT){
-        cout << getpid() << " got SIGINT\n";
     }
 }
 

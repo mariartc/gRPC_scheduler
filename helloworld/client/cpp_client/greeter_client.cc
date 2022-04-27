@@ -1,3 +1,4 @@
+#include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
 #include <netdb.h>
@@ -29,7 +30,7 @@ using namespace std;
 #define TCP_PORT    35001
 #define HOSTNAME    "localhost"
 
-int sd;
+int sd, scheduler_pid;
 char buf[100];
 struct hostent *hp;
 struct sockaddr_in sa;
@@ -146,10 +147,16 @@ void run_rpc(int r, string long_str, int *arr, int arr_length) {
   if (r == 0){
       LongString lng_str = greeter.SendLongString(long_str);
       cout << getpid() << " got long string: " << lng_str.str() << endl;
+      write_to_socket("remove" + to_string(getpid()));
+      kill(scheduler_pid, SIGUSR1);
+      raise(SIGTERM);
   }
   else if (r == 1){
     FloatNumber mean = greeter.ComputeMean(arr, arr_length);
     cout << getpid() << " got mean: " << mean.value() << endl;
+    write_to_socket("remove" + to_string(getpid()));
+    kill(scheduler_pid, SIGUSR1);
+    raise(SIGTERM);
   }
 }
 
@@ -231,15 +238,95 @@ bool connect_to_socket(){
 }
 
 
+void parse_line(string line){
+  vector<string> words{};
+  string word;
+  pid_t C1;
+
+  size_t pos = 0;
+
+  int last_space = line.find_last_of(" ");
+  string last_word = line.substr(last_space + 1, line.size() - 1 - last_space);
+  while ((pos = line.find(" ")) != string::npos){
+    word = line.substr(0, pos);
+    words.push_back(line.substr(0, pos));
+    line.erase(0, pos + 1);
+  }
+  words.push_back(last_word);
+
+  if (words[0] == "compute_mean"){
+    vector<string> numbers{};
+    pos = 0;
+    line = words[1];
+    int last_comma = line.find_last_of(",");
+    string last_number = line.substr(last_comma + 1, line.size() - 1 - last_comma);
+    while ((pos = line.find(",")) != string::npos){
+      numbers.push_back(line.substr(0, pos));
+      line.erase(0, pos + 1);
+    }
+    numbers.push_back(last_number);
+
+    int arr[numbers.size()];
+    for(int i = 0; i < numbers.size(); i++)
+      arr[i] = atoi(numbers[i].c_str());
+
+    C1 = fork();
+    if (C1 == 0){
+      run_rpc(1, "", arr, sizeof(arr)/sizeof(arr[0]));
+    }
+    else {
+      // Wait fot C1 to fall asleep
+      waitpid(C1, NULL, WUNTRACED);
+      // Subscribe C1 to scheduler
+      write_to_socket("subscribe" + to_string(C1) + ":" + words[2]);
+      // Send signal to scheduler to read the pipe
+      kill(scheduler_pid, SIGUSR1);
+    }
+  }
+  else if (words[0] == "send_long_string"){
+    // Wait a little so that the first rpc starts sending
+    // in order to observe the switching between processes
+    this_thread::sleep_for(std::chrono::milliseconds(7));
+    C1 = fork();
+    if (C1 == 0){
+      run_rpc(0, words[1], NULL, -1);
+    }
+    else{
+      // Wait fot C1 to fall asleep
+      waitpid(C1, NULL, WUNTRACED);
+      // Subscribe C2 to scheduler
+      write_to_socket("subscribe" + to_string(C1) + ":" + words[2]);
+      // Send signal to scheduler to read the pipe
+      kill(scheduler_pid, SIGUSR1);
+    }
+  }
+  else
+    cout << getpid() << " read wrong input" << endl;
+}
+
+
 int main(int argc, char** argv) {
-  if(argc == 1 || atoi(argv[1]) <= 0){
-		cout << "Usage: ./greeter_client <scheduler_pid>\n";
+  if(argc < 3 || atoi(argv[1]) <= 0){
+		cout << "Usage: ./greeter_client <scheduler_pid> <script_name>\n";
 		exit(0);
 	}
 
   if(not connect_to_socket())
     exit(1);
 
-  int scheduler_pid = atoi(argv[1]);
-  run_processes(scheduler_pid);
+  scheduler_pid = atoi(argv[1]);
+  string script_name = argv[2];
+  int processes = 0;
+  string line;
+  fstream myfile(script_name, ios::in);
+  if (myfile.is_open()){
+    while (getline(myfile,line)){
+      processes += 1;
+      parse_line(line);
+    }
+    myfile.close();
+  }
+  else cout << "Unable to open file";
+
+  for(int i = 0; i < processes; i++) wait(NULL);
 }
