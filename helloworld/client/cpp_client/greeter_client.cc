@@ -32,6 +32,7 @@ using namespace std;
 vector<int> priorities;
 vector<int> pids;
 int pd[2];
+int max_pid, running_pid = -1;
 
 
 class GreeterClient {
@@ -152,7 +153,6 @@ int get_maximum_priority(){
 
 
 void schedule(){
-  int max_pid, running_pid = -1;
   while(1){
     max_pid = get_maximum_priority();
     if (max_pid != -1 and max_pid != running_pid){
@@ -170,6 +170,8 @@ void schedule(){
 void subscribe_process(int priority, int pid){
   priorities.push_back(priority);
   pids.push_back(pid);
+  if (priority > max_pid)
+    max_pid = pid;
 }
 
 
@@ -229,9 +231,10 @@ void remove_priority(int pid){
     if (pids[i] == pid){
       pids.erase(pids.begin() + i);
       priorities.erase(priorities.begin() + i);
-      return;
+      break;
     }
   }
+  max_pid = get_maximum_priority();
 }
 
 
