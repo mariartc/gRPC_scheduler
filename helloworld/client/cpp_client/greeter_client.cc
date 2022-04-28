@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
@@ -26,6 +28,7 @@ using helloworld::IntNumber;
 using helloworld::LongString;
 
 using namespace std;
+using namespace std::chrono;
 
 #define TCP_PORT    35001
 #define HOSTNAME    "localhost"
@@ -34,6 +37,7 @@ int sd, scheduler_pid;
 char buf[100];
 struct hostent *hp;
 struct sockaddr_in sa;
+ofstream output_file ("../../execution_times.txt");
 
 class GreeterClient {
   public:
@@ -81,10 +85,15 @@ class GreeterClient {
           stub_->ComputeMean(&context, &reply));
       cout << getpid() << " starts sending array" << endl;
 
+      IntNumber int_num_arr[arr_length];
       for (int i = 0; i < arr_length; i++){
-        IntNumber int_number;
-        int_number.set_value(arr[i]);
-        if (!writer->Write(int_number)) {
+        IntNumber int_num;
+        int_num.set_value(arr[i]);
+        int_num_arr[i] = int_num;
+      }
+
+      for (int i = 0; i < arr_length; i++){
+        if (!writer->Write(int_num_arr[i])) {
           cout << "Broken stream" << endl;
           break;
         }
@@ -137,15 +146,19 @@ void write_to_socket(string str){
 }
 
 
-void run_rpc(int r, string long_str, int *arr, int arr_length) {
+void run_rpc(int r, string long_str, int *arr, int arr_length, string descr) {
   GreeterClient greeter(
     grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
   cout << getpid() << " going to sleep..." << endl;
   // Wait for scheduler to notify
   raise(SIGSTOP);
   cout << getpid() << " woke up! " << endl;
+  auto start = high_resolution_clock::now();
   if (r == 0){
       LongString lng_str = greeter.SendLongString(long_str);
+      auto stop = high_resolution_clock::now();
+      auto duration = duration_cast<microseconds>(stop - start);
+      output_file << descr + " " << duration.count() << endl;
       cout << getpid() << " got long string: " << lng_str.str() << endl;
       write_to_socket("remove" + to_string(getpid()));
       kill(scheduler_pid, SIGUSR1);
@@ -153,59 +166,13 @@ void run_rpc(int r, string long_str, int *arr, int arr_length) {
   }
   else if (r == 1){
     FloatNumber mean = greeter.ComputeMean(arr, arr_length);
+    auto stop = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(stop - start);
+    output_file << descr + " " << duration.count() << endl;
     cout << getpid() << " got mean: " << mean.value() << endl;
     write_to_socket("remove" + to_string(getpid()));
     kill(scheduler_pid, SIGUSR1);
     raise(SIGTERM);
-  }
-}
-
-
-void run_processes(int scheduler_pid){
-  string str = "hello";
-  int priority;
-  int arr_length = 1000;
-  int arr[arr_length];
-  fill_n(arr, arr_length, 3);
-
-  pid_t C1, C2;
-  C1 = fork();
-  if (C1 == 0){
-    run_rpc(1, "", arr, arr_length);
-  }
-  else {
-    // Wait fot C1 to fall asleep
-    waitpid(C1, NULL, WUNTRACED);
-    // Subscribe C1 to scheduler
-    priority = 1;
-    write_to_socket("subscribe" + to_string(C1) + ":" + to_string(priority));
-    // Send signal to scheduler to read the pipe
-    kill(scheduler_pid, SIGUSR1);
-    // Wait a little so that the first rpc starts sending
-    // in order to observe the switching between processes
-    this_thread::sleep_for(std::chrono::milliseconds(10));
-    C2 = fork();
-    if (C2 == 0){
-      run_rpc(0, str, NULL, -1);
-    }
-    else{
-      // Wait fot C2 to fall asleep
-      waitpid(C2, NULL, WUNTRACED);
-      // Subscribe C2 to scheduler
-      priority = 2;
-      write_to_socket("subscribe" + to_string(C2) + ":" + to_string(priority));
-      // Send signal to scheduler to read the pipe
-      kill(scheduler_pid, SIGUSR1);
-
-      // Wait for a process to terminate so that
-      // the scheduler removes its priority and pid
-      pid_t F1 = wait(NULL);
-      write_to_socket("remove" + to_string(F1));
-      kill(scheduler_pid, SIGUSR1);
-      F1 = wait(NULL);
-      write_to_socket("remove" + to_string(F1));
-      kill(scheduler_pid, SIGUSR1);
-    }
   }
 }
 
@@ -240,7 +207,7 @@ bool connect_to_socket(){
 
 void parse_line(string line){
   vector<string> words{};
-  string word;
+  string word, original_line = line;
   pid_t C1;
 
   size_t pos = 0;
@@ -272,7 +239,7 @@ void parse_line(string line){
 
     C1 = fork();
     if (C1 == 0){
-      run_rpc(1, "", arr, sizeof(arr)/sizeof(arr[0]));
+      run_rpc(1, "", arr, sizeof(arr)/sizeof(arr[0]), original_line);
     }
     else {
       // Wait fot C1 to fall asleep
@@ -286,10 +253,10 @@ void parse_line(string line){
   else if (words[0] == "send_long_string"){
     // Wait a little so that the first rpc starts sending
     // in order to observe the switching between processes
-    this_thread::sleep_for(std::chrono::milliseconds(7));
+    // this_thread::sleep_for(std::chrono::milliseconds(8));
     C1 = fork();
     if (C1 == 0){
-      run_rpc(0, words[1], NULL, -1);
+      run_rpc(0, words[1], NULL, -1, original_line);
     }
     else{
       // Wait fot C1 to fall asleep
@@ -318,15 +285,16 @@ int main(int argc, char** argv) {
   string script_name = argv[2];
   int processes = 0;
   string line;
-  fstream myfile(script_name, ios::in);
-  if (myfile.is_open()){
-    while (getline(myfile,line)){
+  fstream input_file(script_name, ios::in);
+  if (input_file.is_open() && output_file.is_open()){
+    while (getline(input_file,line)){
       processes += 1;
       parse_line(line);
     }
-    myfile.close();
+    input_file.close();
   }
   else cout << "Unable to open file";
 
   for(int i = 0; i < processes; i++) wait(NULL);
+  output_file.close();
 }
