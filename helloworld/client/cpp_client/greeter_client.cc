@@ -33,49 +33,16 @@ using namespace std::chrono;
 #define TCP_PORT    35001
 #define HOSTNAME    "localhost"
 
-int sd, scheduler_pid;
+int sd, scheduler_pid, debug = false, scheduler = false;
 char buf[100];
 struct hostent *hp;
 struct sockaddr_in sa;
-ofstream output_file ("../../execution_times.txt");
+ofstream output_file;
 
 class GreeterClient {
   public:
     GreeterClient(shared_ptr<Channel> channel)
       : stub_(Greeter::NewStub(channel)) {}
-
-    string SayHello(const string& user) {
-      HelloRequest request;
-      request.set_name(user);
-
-      HelloReply reply;
-      ClientContext context;
-      
-      Status status = stub_->SayHello(&context, request, &reply);
-
-      if (status.ok()) {
-        return reply.message();
-      } else {
-        cout << status.error_code() << ": " << status.error_message()
-                  << endl;
-        return "RPC failed";
-      }
-    }
-
-
-    FloatNumber ComputeMeanRepeated(float *arr, int arr_length) {
-      FloatNumberList float_arr;
-      ClientContext context;
-      FloatNumber reply;
-
-      for(int i = 0; i < arr_length; i++) 
-        float_arr.add_value(arr[i]);
-      
-      Status status = stub_->ComputeMeanRepeated(&context, float_arr, &reply);
-
-      return reply;
-    }
-
 
     FloatNumber ComputeMean(int *arr, int arr_length) {
       ClientContext context;
@@ -83,7 +50,8 @@ class GreeterClient {
       
       std::unique_ptr<ClientWriter<IntNumber> > writer(
           stub_->ComputeMean(&context, &reply));
-      cout << getpid() << " starts sending array" << endl;
+      if(debug)
+        cout << getpid() << " starts sending array" << endl;
 
       IntNumber int_num_arr[arr_length];
       for (int i = 0; i < arr_length; i++){
@@ -93,7 +61,7 @@ class GreeterClient {
       }
 
       for (int i = 0; i < arr_length; i++){
-        if (!writer->Write(int_num_arr[i])) {
+        if(!writer->Write(int_num_arr[i])) {
           cout << "Broken stream" << endl;
           break;
         }
@@ -102,7 +70,7 @@ class GreeterClient {
       writer->WritesDone();
       Status status = writer->Finish();
 
-      if (status.ok()) {
+      if(status.ok()) {
         return reply;
       } else {
         FloatNumber error;
@@ -111,82 +79,66 @@ class GreeterClient {
       }
     }
 
-
-    LongString SendLongString(string str) {
-      ClientContext context;
-      LongString lng_str;
-      lng_str.set_str(str);
-      LongString reply;
-      
-      cout << getpid() << " sending " << str << endl;
-
-      Status status = stub_->SendLongString(&context, lng_str, &reply);
-      return reply;
-    }
-
   private:
     unique_ptr<Greeter::Stub> stub_;
 };
 
 
 void write_to_socket(string str){
-    str.copy(buf, str.length());
-    buf[str.length()] = '\0';
+  str.copy(buf, str.length());
+  buf[str.length()] = '\0';
 
-	  ssize_t n;
-		n = write(sd, buf, sizeof(buf));
+  ssize_t n;
+  n = write(sd, buf, sizeof(buf));
 
-    if(n < 0){
-      cout << getpid() << " something went wrong with writing "
-            << str << " to socket" << endl;
-      return;
-    }
+  if(n < 0){
+    cout << getpid() << " something went wrong with writing "
+          << str << " to socket" << endl;
+    return;
+  }
 
-    cout << getpid() << " wrote " << buf << " to socket" << endl;
+  if(debug)
+    cout << getpid() << " wrote "
+    << buf << " to socket" << endl;
 }
 
 
-void run_rpc(int r, string long_str, int *arr, int arr_length, string descr) {
+void run_rpc(int *arr, int arr_length, string descr) {
+  auto start = high_resolution_clock::now();
   GreeterClient greeter(
     grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
-  cout << getpid() << " going to sleep..." << endl;
-  // Wait for scheduler to notify
-  raise(SIGSTOP);
-  cout << getpid() << " woke up! " << endl;
-  auto start = high_resolution_clock::now();
-  if (r == 0){
-      LongString lng_str = greeter.SendLongString(long_str);
-      auto stop = high_resolution_clock::now();
-      auto duration = duration_cast<microseconds>(stop - start);
-      output_file << descr + " " << duration.count() << endl;
-      cout << getpid() << " got long string: " << lng_str.str() << endl;
-      write_to_socket("remove" + to_string(getpid()));
-      kill(scheduler_pid, SIGUSR1);
-      raise(SIGTERM);
+
+  if(scheduler){
+    if(debug) cout << getpid() << " going to sleep..." << endl;
+    // Wait for scheduler to notify
+    raise(SIGSTOP);
+    if(debug) cout << getpid() << " woke up! " << endl;
   }
-  else if (r == 1){
-    FloatNumber mean = greeter.ComputeMean(arr, arr_length);
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(stop - start);
-    output_file << descr + " " << duration.count() << endl;
-    cout << getpid() << " got mean: " << mean.value() << endl;
+
+  FloatNumber mean = greeter.ComputeMean(arr, arr_length);
+  auto stop = high_resolution_clock::now();
+  auto duration = duration_cast<microseconds>(stop - start);
+  output_file << descr + " " << duration.count() << endl;
+  if(debug) cout << getpid() << " got mean: " << mean.value() << endl;
+
+  if(scheduler){
     write_to_socket("remove" + to_string(getpid()));
     kill(scheduler_pid, SIGUSR1);
-    raise(SIGTERM);
   }
+  raise(SIGTERM);
 }
 
 
 bool connect_to_socket(){
   // Create TCP/IP socket
-  if ((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+  if((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket");
 		return false;
 	}
   cout << getpid() << " created TCP socket\n";
 
 	// Look up remote hostname on DNS
-	if ( !(hp = gethostbyname(HOSTNAME))) {
+	if(!(hp = gethostbyname(HOSTNAME))) {
     cout << getpid() << " failed DNS lookup for host " << HOSTNAME << endl;
 		return false;
 	}
@@ -196,12 +148,18 @@ bool connect_to_socket(){
 	sa.sin_port = htons(TCP_PORT);
 	memcpy(&sa.sin_addr.s_addr, hp->h_addr, sizeof(struct in_addr));
   cout << getpid() << " connecting to remote host..." << endl;
-	if (connect(sd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
+	if(connect(sd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
 		perror("connect");
 		return false;
 	}
   cout << getpid() << " connected!" << endl;
   return true;
+}
+
+
+void close_connection(int a){
+  close(sd);
+  exit(0);
 }
 
 
@@ -221,27 +179,27 @@ void parse_line(string line){
   }
   words.push_back(last_word);
 
-  if (words[0] == "compute_mean"){
-    vector<string> numbers{};
-    pos = 0;
-    line = words[1];
-    int last_comma = line.find_last_of(",");
-    string last_number = line.substr(last_comma + 1, line.size() - 1 - last_comma);
-    while ((pos = line.find(",")) != string::npos){
-      numbers.push_back(line.substr(0, pos));
-      line.erase(0, pos + 1);
-    }
-    numbers.push_back(last_number);
+  vector<string> numbers{};
+  pos = 0;
+  line = words[1];
+  int last_comma = line.find_last_of(",");
+  string last_number = line.substr(last_comma + 1, line.size() - 1 - last_comma);
+  while ((pos = line.find(",")) != string::npos){
+    numbers.push_back(line.substr(0, pos));
+    line.erase(0, pos + 1);
+  }
+  numbers.push_back(last_number);
 
-    int arr[numbers.size()];
-    for(int i = 0; i < numbers.size(); i++)
-      arr[i] = atoi(numbers[i].c_str());
+  int arr[numbers.size()];
+  for(int i = 0; i < numbers.size(); i++)
+    arr[i] = atoi(numbers[i].c_str());
 
-    C1 = fork();
-    if (C1 == 0){
-      run_rpc(1, "", arr, sizeof(arr)/sizeof(arr[0]), original_line);
-    }
-    else {
+  C1 = fork();
+  if(C1 == 0){
+    run_rpc(arr, sizeof(arr)/sizeof(arr[0]), original_line);
+  }
+  else {
+    if(scheduler){
       // Wait fot C1 to fall asleep
       waitpid(C1, NULL, WUNTRACED);
       // Subscribe C1 to scheduler
@@ -250,51 +208,55 @@ void parse_line(string line){
       kill(scheduler_pid, SIGUSR1);
     }
   }
-  else if (words[0] == "send_long_string"){
-    // Wait a little so that the first rpc starts sending
-    // in order to observe the switching between processes
-    // this_thread::sleep_for(std::chrono::milliseconds(8));
-    C1 = fork();
-    if (C1 == 0){
-      run_rpc(0, words[1], NULL, -1, original_line);
-    }
-    else{
-      // Wait fot C1 to fall asleep
-      waitpid(C1, NULL, WUNTRACED);
-      // Subscribe C2 to scheduler
-      write_to_socket("subscribe" + to_string(C1) + ":" + words[2]);
-      // Send signal to scheduler to read the pipe
-      kill(scheduler_pid, SIGUSR1);
-    }
-  }
-  else
-    cout << getpid() << " read wrong input" << endl;
 }
 
 
 int main(int argc, char** argv) {
-  if(argc < 3 || atoi(argv[1]) <= 0){
-		cout << "Usage: ./greeter_client <scheduler_pid> <script_name>\n";
+  // Define handler for SIGINT
+  struct sigaction action;
+  action.sa_handler = &close_connection;
+  action.sa_flags = SA_RESTART;
+  sigaction(SIGINT, &action, NULL);
+
+  if(argc < 3){
+		cout << "Usage: ./greeter_client <input_file> <output_file> [scheduler_pid] [--debug]\n";
 		exit(0);
 	}
 
-  if(not connect_to_socket())
-    exit(1);
+  if((argc == 4 && argv[3] == "--debug") || (argc == 5 && argv[4] == "--debug"))
+    debug = true;
 
-  scheduler_pid = atoi(argv[1]);
-  string script_name = argv[2];
-  int processes = 0;
+  if(argc >= 4 && (scheduler_pid = atoi(argv[3])) > 0)
+    scheduler = true;
+
+  if(scheduler)
+    if(not connect_to_socket())
+      exit(1);
+
+  auto start_total = high_resolution_clock::now();
+
+  int wpid, status = 0;
+  string script_name = argv[1], output = argv[2];
   string line;
   fstream input_file(script_name, ios::in);
-  if (input_file.is_open() && output_file.is_open()){
+  output_file.open(output);
+
+  if(input_file.is_open() && output_file.is_open()){
+    start_total = high_resolution_clock::now();
     while (getline(input_file,line)){
-      processes += 1;
       parse_line(line);
     }
     input_file.close();
   }
   else cout << "Unable to open file";
 
-  for(int i = 0; i < processes; i++) wait(NULL);
+  // Wait for all children to finish
+  while ((wpid = wait(&status)) > 0);
+
+  auto stop_total = high_resolution_clock::now();
+  auto duration_total = duration_cast<microseconds>(stop_total - start_total);
+
+  output_file << "Total_time: " << duration_total.count();
   output_file.close();
+  if(scheduler) close(sd);
 }
