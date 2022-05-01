@@ -3,6 +3,7 @@
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
+#include <mutex>
 #include <netdb.h>
 #include <string>
 #include <sys/wait.h>
@@ -29,29 +30,53 @@ using helloworld::LongString;
 
 using namespace std;
 using namespace std::chrono;
+using namespace std::this_thread;
 
 #define TCP_PORT    35001
 #define HOSTNAME    "localhost"
-
-int sd, scheduler_pid, debug = false, scheduler = false;
-char buf[100];
-struct hostent *hp;
-struct sockaddr_in sa;
+thread::id default_id = get_id();
+thread::id max_id = default_id, running_id = default_id;
+int max_priority = -1;
+vector<tuple<thread::id, int, int>> ids;
+vector<std::thread> threads;
 ofstream output_file;
+mutex output_file_mutex, ids_mutex, cout_mutex;
+bool stop_scheduler = false;
+
+
+bool should_sleep(thread::id id){
+  ids_mutex.lock();
+  int n = ids.size();
+  ids_mutex.unlock();
+  for (int i = 0; i < n; i++){
+    if (get<0>(ids[i]) == id){
+      bool temp = get<1>(ids[i]) == 1;
+      return temp;
+    }
+  }
+  return true;
+}
+
+
+void sleep_thread(thread::id id){
+  while(should_sleep(id));
+}
+
 
 class GreeterClient {
   public:
     GreeterClient(shared_ptr<Channel> channel)
       : stub_(Greeter::NewStub(channel)) {}
 
-    FloatNumber ComputeMean(int *arr, int arr_length) {
+    FloatNumber ComputeMean(int *arr, int arr_length, thread::id id) {
       ClientContext context;
       FloatNumber reply;
       
       std::unique_ptr<ClientWriter<IntNumber> > writer(
           stub_->ComputeMean(&context, &reply));
-      if(debug)
-        cout << getpid() << " starts sending array" << endl;
+      cout_mutex.lock();
+      cout << id << " starts sending array" << endl;
+      cout_mutex.unlock();
 
       IntNumber int_num_arr[arr_length];
       for (int i = 0; i < arr_length; i++){
@@ -61,7 +86,8 @@ class GreeterClient {
       }
 
       for (int i = 0; i < arr_length; i++){
-        if(!writer->Write(int_num_arr[i])) {
+        if (should_sleep(id)) sleep_thread(id);
+        if (!writer->Write(int_num_arr[i])){
           cout << "Broken stream" << endl;
           break;
         }
@@ -70,7 +96,7 @@ class GreeterClient {
       writer->WritesDone();
       Status status = writer->Finish();
 
-      if(status.ok()) {
+      if (status.ok()) {
         return reply;
       } else {
         FloatNumber error;
@@ -84,89 +110,62 @@ class GreeterClient {
 };
 
 
-void write_to_socket(string str){
-  str.copy(buf, str.length());
-  buf[str.length()] = '\0';
-
-  ssize_t n;
-  n = write(sd, buf, sizeof(buf));
-
-  if(n < 0){
-    cout << getpid() << " something went wrong with writing "
-          << str << " to socket" << endl;
-    return;
+thread::id get_maximum_priority(){
+  if (ids.size() == 0){
+      max_priority = -1;
+      return default_id;
   }
-
-  if(debug)
-    cout << getpid() << " wrote "
-    << buf << " to socket" << endl;
-}
-
-
-void run_rpc(int *arr, int arr_length, string descr) {
-  auto start = high_resolution_clock::now();
-  GreeterClient greeter(
-    grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
-
-  if(scheduler){
-    if(debug) cout << getpid() << " going to sleep..." << endl;
-    // Wait for scheduler to notify
-    raise(SIGSTOP);
-    if(debug) cout << getpid() << " woke up! " << endl;
+  int max_i = -1, max = 0, n = ids.size();
+  for(int i = 0; i < n; i++){
+      if (get<2>(ids[i]) > max){
+          max_i = i;
+          max = get<2>(ids[i]);
+      }
   }
+  max_priority = get<2>(ids[max_i]);
+  thread::id returned_id = get<0>(ids[max_i]);
+  return returned_id;
+}
 
-  FloatNumber mean = greeter.ComputeMean(arr, arr_length);
-  auto stop = high_resolution_clock::now();
-  auto duration = duration_cast<microseconds>(stop - start);
-  output_file << descr + " " << duration.count() << endl;
-  if(debug) cout << getpid() << " got mean: " << mean.value() << endl;
 
-  if(scheduler){
-    write_to_socket("remove" + to_string(getpid()));
-    kill(scheduler_pid, SIGUSR1);
+void subscribe_thread(thread::id id, int priority){
+  ids_mutex.lock();
+  ids.push_back(make_tuple(id, 1, priority));
+  if (max_id == default_id or priority > max_priority){
+      max_id = id;
+      max_priority = priority;
+      ids_mutex.unlock();
+      cout_mutex.lock();
+      cout << "subscribe_priority: new max_id=" << max_id 
+          << ", new priority=" << max_priority << endl;
+      cout_mutex.unlock();
   }
-  raise(SIGTERM);
+  else
+    ids_mutex.unlock();
 }
 
 
-bool connect_to_socket(){
-  // Create TCP/IP socket
-  if((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-		perror("socket");
-		return false;
-	}
-  cout << getpid() << " created TCP socket\n";
-
-	// Look up remote hostname on DNS
-	if(!(hp = gethostbyname(HOSTNAME))) {
-    cout << getpid() << " failed DNS lookup for host " << HOSTNAME << endl;
-		return false;
-	}
-
-	/* Connect to remote TCP port */
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(TCP_PORT);
-	memcpy(&sa.sin_addr.s_addr, hp->h_addr, sizeof(struct in_addr));
-  cout << getpid() << " connecting to remote host..." << endl;
-	if(connect(sd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
-		perror("connect");
-		return false;
-	}
-  cout << getpid() << " connected!" << endl;
-  return true;
+void unsubscribe_thread(thread::id id){
+  ids_mutex.lock();
+  int n = ids.size();
+  for(int i = 0; i < n; i++){
+    if (get<0>(ids[i]) == id){
+      ids.erase(ids.begin() + i);
+      break;
+    }
+  }
+  max_id = get_maximum_priority();
+  ids_mutex.unlock();
+  cout_mutex.lock();
+  cout << "remove_priority: new max_id=" << max_id << ", new priority=" << max_priority << endl;
+  cout_mutex.unlock();
 }
 
 
-void close_connection(int a){
-  close(sd);
-  exit(0);
-}
-
-
-void parse_line(string line){
+vector<string> parse_line(string line, int &priority){
   vector<string> words{};
-  string word, original_line = line;
-  pid_t C1;
+  vector<string> numbers{};
+  string word;
 
   size_t pos = 0;
 
@@ -179,7 +178,6 @@ void parse_line(string line){
   }
   words.push_back(last_word);
 
-  vector<string> numbers{};
   pos = 0;
   line = words[1];
   int last_comma = line.find_last_of(",");
@@ -190,73 +188,125 @@ void parse_line(string line){
   }
   numbers.push_back(last_number);
 
-  int arr[numbers.size()];
+  priority = atoi(words[2].c_str());
+
+  return numbers;
+}
+
+
+void run_rpc(string line) {
+  int priority;
+  vector<string> numbers = parse_line(line, priority);
+
+  int arr_length = numbers.size();
+  int arr[arr_length];
   for(int i = 0; i < numbers.size(); i++)
     arr[i] = atoi(numbers[i].c_str());
 
-  C1 = fork();
-  if(C1 == 0){
-    run_rpc(arr, sizeof(arr)/sizeof(arr[0]), original_line);
+  auto start = high_resolution_clock::now();
+  thread::id id = get_id();
+
+  subscribe_thread(id, priority);
+  GreeterClient greeter(
+    grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
+
+  cout_mutex.lock();
+  cout << id << " going to sleep..." << endl;
+  cout_mutex.unlock();
+
+  sleep_thread(id);
+  
+  cout_mutex.lock();
+  cout << id << " woke up!" << endl;
+  cout_mutex.unlock();
+
+  FloatNumber mean = greeter.ComputeMean(arr, arr_length, id);
+  auto stop = high_resolution_clock::now();
+  
+  cout_mutex.lock();
+  cout << id << " got mean: " << mean.value() << endl;
+  cout_mutex.unlock();
+  auto duration = duration_cast<microseconds>(stop - start);
+  output_file_mutex.lock();
+  output_file << line + " " << duration.count() << endl;
+  output_file_mutex.unlock();
+  unsubscribe_thread(id);
+}
+
+
+void send_to_sleep(thread::id id){
+  ids_mutex.lock();
+  for (int i = 0; i < ids.size(); i++){
+    if (get<0>(ids[i]) == id)
+      get<1>(ids[i]) = 1;
   }
-  else {
-    if(scheduler){
-      // Wait fot C1 to fall asleep
-      waitpid(C1, NULL, WUNTRACED);
-      // Subscribe C1 to scheduler
-      write_to_socket("subscribe" + to_string(C1) + ":" + words[2]);
-      // Send signal to scheduler to read the pipe
-      kill(scheduler_pid, SIGUSR1);
-    }
+  ids_mutex.unlock();
+}
+
+
+void wake_up(thread::id id){
+  ids_mutex.lock();
+  for (int i = 0; i < ids.size(); i++){
+    if (get<0>(ids[i]) == id)
+      get<1>(ids[i]) = 0;
+  }
+  ids_mutex.unlock();
+}
+
+
+void scheduler(){
+  while(not stop_scheduler){
+      if (max_id != default_id and max_id != running_id){
+          if (running_id != default_id){
+              send_to_sleep(running_id);
+              cout_mutex.lock();
+              cout << get_id() << " sent " << running_id << " to sleep" << endl;
+              cout_mutex.unlock();
+          }
+          running_id = max_id;
+          wake_up(max_id);
+          cout_mutex.lock();
+          cout << get_id() << " waking up " << max_id << endl;
+          cout_mutex.unlock();
+      }
   }
 }
 
 
 int main(int argc, char** argv) {
-  // Define handler for SIGINT
-  struct sigaction action;
-  action.sa_handler = &close_connection;
-  action.sa_flags = SA_RESTART;
-  sigaction(SIGINT, &action, NULL);
 
   if(argc < 3){
-		cout << "Usage: ./greeter_client <input_file> <output_file> [scheduler_pid] [--debug]\n";
+		cout << "Usage: ./greeter_client <input_file> <output_file> [--debug]\n";
 		exit(0);
 	}
 
-  if((argc == 4 && argv[3] == "--debug") || (argc == 5 && argv[4] == "--debug"))
-    debug = true;
-
-  if(argc >= 4 && (scheduler_pid = atoi(argv[3])) > 0)
-    scheduler = true;
-
-  if(scheduler)
-    if(not connect_to_socket())
-      exit(1);
-
   auto start_total = high_resolution_clock::now();
 
-  int wpid, status = 0;
   string script_name = argv[1], output = argv[2];
   string line;
   fstream input_file(script_name, ios::in);
   output_file.open(output);
+  
+  std::thread sch(scheduler);
 
   if(input_file.is_open() && output_file.is_open()){
     start_total = high_resolution_clock::now();
     while (getline(input_file,line)){
-      parse_line(line);
+      threads.push_back(std::thread(run_rpc, line));
     }
     input_file.close();
   }
   else cout << "Unable to open file";
-
-  // Wait for all children to finish
-  while ((wpid = wait(&status)) > 0);
+  
+  for (int i = 0; i < threads.size(); i++) {
+    threads[i].join();
+  }
+  stop_scheduler = true;
+  sch.join();
 
   auto stop_total = high_resolution_clock::now();
   auto duration_total = duration_cast<microseconds>(stop_total - start_total);
 
   output_file << "Total_time: " << duration_total.count();
   output_file.close();
-  if(scheduler) close(sd);
 }
