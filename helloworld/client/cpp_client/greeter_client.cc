@@ -6,6 +6,7 @@
 #include <mutex>
 #include <netdb.h>
 #include <string>
+#include <string.h>
 #include <sys/wait.h>
 #include <thread>
 #include <vector>
@@ -41,7 +42,7 @@ vector<tuple<thread::id, int, int>> ids;
 vector<std::thread> threads;
 ofstream output_file;
 mutex output_file_mutex, ids_mutex, cout_mutex;
-bool stop_scheduler = false;
+bool stop_scheduler = false, use_scheduler = false, debug = false;
 
 
 bool should_sleep(thread::id id){
@@ -74,9 +75,11 @@ class GreeterClient {
       
       std::unique_ptr<ClientWriter<IntNumber> > writer(
           stub_->ComputeMean(&context, &reply));
-      cout_mutex.lock();
-      cout << id << " starts sending array" << endl;
-      cout_mutex.unlock();
+      if(debug){
+        cout_mutex.lock();
+        cout << id << " starts sending array" << endl;
+        cout_mutex.unlock();
+      }
 
       IntNumber int_num_arr[arr_length];
       for (int i = 0; i < arr_length; i++){
@@ -86,7 +89,7 @@ class GreeterClient {
       }
 
       for (int i = 0; i < arr_length; i++){
-        if (should_sleep(id)) sleep_thread(id);
+        if(use_scheduler) sleep_thread(id);
         if (!writer->Write(int_num_arr[i])){
           cout << "Broken stream" << endl;
           break;
@@ -132,13 +135,15 @@ void subscribe_thread(thread::id id, int priority){
   ids_mutex.lock();
   ids.push_back(make_tuple(id, 1, priority));
   if (max_id == default_id or priority > max_priority){
-      max_id = id;
-      max_priority = priority;
-      ids_mutex.unlock();
+    max_id = id;
+    max_priority = priority;
+    ids_mutex.unlock();
+    if(debug){
       cout_mutex.lock();
       cout << "subscribe_priority: new max_id=" << max_id 
           << ", new priority=" << max_priority << endl;
       cout_mutex.unlock();
+    }
   }
   else
     ids_mutex.unlock();
@@ -156,9 +161,11 @@ void unsubscribe_thread(thread::id id){
   }
   max_id = get_maximum_priority();
   ids_mutex.unlock();
-  cout_mutex.lock();
-  cout << "remove_priority: new max_id=" << max_id << ", new priority=" << max_priority << endl;
-  cout_mutex.unlock();
+  if(debug){
+    cout_mutex.lock();
+    cout << "remove_priority: new max_id=" << max_id << ", new priority=" << max_priority << endl;
+    cout_mutex.unlock();
+  }
 }
 
 
@@ -206,31 +213,38 @@ void run_rpc(string line) {
   auto start = high_resolution_clock::now();
   thread::id id = get_id();
 
-  subscribe_thread(id, priority);
+  if(use_scheduler) subscribe_thread(id, priority);
   GreeterClient greeter(
     grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
 
-  cout_mutex.lock();
-  cout << id << " going to sleep..." << endl;
-  cout_mutex.unlock();
+  if(debug){
+    cout_mutex.lock();
+    cout << id << " going to sleep..." << endl;
+    cout_mutex.unlock();
+  }
 
-  sleep_thread(id);
+  if(use_scheduler) sleep_thread(id);
+
+  if(debug){
+    cout_mutex.lock();
+    cout << id << " woke up!" << endl;
+    cout_mutex.unlock();
+  }
   
-  cout_mutex.lock();
-  cout << id << " woke up!" << endl;
-  cout_mutex.unlock();
-
   FloatNumber mean = greeter.ComputeMean(arr, arr_length, id);
   auto stop = high_resolution_clock::now();
+
+  if(debug){
+    cout_mutex.lock();
+    cout << id << " got mean: " << mean.value() << endl;
+    cout_mutex.unlock();
+  }
   
-  cout_mutex.lock();
-  cout << id << " got mean: " << mean.value() << endl;
-  cout_mutex.unlock();
   auto duration = duration_cast<microseconds>(stop - start);
   output_file_mutex.lock();
   output_file << line + " " << duration.count() << endl;
   output_file_mutex.unlock();
-  unsubscribe_thread(id);
+  if(use_scheduler) unsubscribe_thread(id);
 }
 
 
@@ -259,15 +273,19 @@ void scheduler(){
       if (max_id != default_id and max_id != running_id){
           if (running_id != default_id){
               send_to_sleep(running_id);
+            if(debug){
               cout_mutex.lock();
               cout << get_id() << " sent " << running_id << " to sleep" << endl;
               cout_mutex.unlock();
+            }
           }
           running_id = max_id;
           wake_up(max_id);
-          cout_mutex.lock();
-          cout << get_id() << " waking up " << max_id << endl;
-          cout_mutex.unlock();
+          if(debug){
+            cout_mutex.lock();
+            cout << get_id() << " waking up " << max_id << endl;
+            cout_mutex.unlock();
+          }
       }
   }
 }
@@ -276,18 +294,23 @@ void scheduler(){
 int main(int argc, char** argv) {
 
   if(argc < 3){
-		cout << "Usage: ./greeter_client <input_file> <output_file> [--debug]\n";
+		cout << "Usage: ./greeter_client <input_file> <output_file> [--scheduler] [--debug]\n";
 		exit(0);
 	}
+  
+  if(argc == 4 && !strcmp(argv[3], "--scheduler") || argc == 5 && !strcmp(argv[3], "--scheduler")) use_scheduler = true;
+
+  if(argc == 4 && !strcmp(argv[3], "--debug") || argc == 5 && !strcmp(argv[3], "--debug")) debug = true;
 
   auto start_total = high_resolution_clock::now();
+  std::thread sch;
 
   string script_name = argv[1], output = argv[2];
   string line;
   fstream input_file(script_name, ios::in);
   output_file.open(output);
   
-  std::thread sch(scheduler);
+  if (use_scheduler) sch = std::thread(scheduler);
 
   if(input_file.is_open() && output_file.is_open()){
     start_total = high_resolution_clock::now();
@@ -301,8 +324,11 @@ int main(int argc, char** argv) {
   for (int i = 0; i < threads.size(); i++) {
     threads[i].join();
   }
-  stop_scheduler = true;
-  sch.join();
+
+  if(use_scheduler){
+    stop_scheduler = true;
+    sch.join();
+  }
 
   auto stop_total = high_resolution_clock::now();
   auto duration_total = duration_cast<microseconds>(stop_total - start_total);
