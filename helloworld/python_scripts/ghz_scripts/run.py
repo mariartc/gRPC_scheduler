@@ -4,12 +4,12 @@ import random
 import string
 
 # VARIABLES
-PATH_TO_EXE = "./ghz"
-PATH_TO_PROTO= "./helloworld.proto"
-PATH_TO_CONFIG = "./ghz.json"
+PATH_TO_EXE = "../../ghz"
+PATH_TO_PROTO= "../../helloworld.proto"
+PATH_TO_CONFIG = "../../ghz.json"
 RPC_CALL = "helloworld.Greeter.ComputeMeanRepeatedOrSendLongString"
 OUTPUT_FORMAT = "pretty"
-OUTPUT_FILE = " > test.json"
+OUTPUT_FILE = " > ../../test.json"
 RESULTS_FILE = "results.json"
 HOST = " 127.0.0.1:50051"
 OPTIONS = " --insecure --proto=" + PATH_TO_PROTO + " --call=" + RPC_CALL + \
@@ -45,7 +45,7 @@ def read_current_results():
     return current_results
 
 def write_ghz_json(ghz_json):
-    file = open("ghz.json","w")
+    file = open(PATH_TO_CONFIG,"w")
     file.write(json.dumps(ghz_json, indent=4))
     file.close()
 

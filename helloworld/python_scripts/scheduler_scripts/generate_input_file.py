@@ -1,5 +1,8 @@
 import random
 
+list_length = 20
+priority_range = 10
+
 f = open("input_file.txt", "w")
 
 def generate_random_numbers(length, rng = 100):
@@ -8,8 +11,8 @@ def generate_random_numbers(length, rng = 100):
 
 for _ in range(100):
     line = "compute_mean "
-    line += generate_random_numbers(20)
-    line += " " + str(random.randint(1, 10)) + "\n"
+    line += generate_random_numbers(list_length)
+    line += " " + str(random.randint(1, priority_range)) + "\n"
     f.write(line)
 
 f.close()

@@ -28,7 +28,7 @@ def plot(title, x, y, xlabel, ylabel, save_name, color, kind="plot", marker=[""]
     if label != [""]:
         plt.legend()
 
-    plt.savefig(f"plots/{save_name}", bbox_inches='tight')
+    plt.savefig(f"../../ghz_plots/{save_name}", bbox_inches='tight')
 
     plt.clf()
 

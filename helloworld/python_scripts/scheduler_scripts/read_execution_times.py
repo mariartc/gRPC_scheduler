@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 
-f = open("execution_times.txt", "r")
+path_to_input_files = ""
+path_to_output_files = ""
+
+f = open(path_to_input_files + "execution_times.txt", "r")
 
 priority_times = {}
 
@@ -18,7 +21,7 @@ for line in f:
 
 f.close()
 
-f = open("execution_times_scheduler.txt", "r")
+f = open(path_to_input_files + "execution_times_scheduler.txt", "r")
 
 priority_times_scheduler = {}
 
@@ -54,7 +57,7 @@ plt.xlabel("priority")
 
 plt.legend()
 
-plt.savefig(f"client/cpp_client/plots/mean_execution_times.png", bbox_inches='tight')
+plt.savefig(f"{path_to_output_files}mean_execution_times.png", bbox_inches='tight')
 
 plt.clf()
 
@@ -67,6 +70,6 @@ plt.bar(["with_scheduler", "without_scheduler"], [total_time_scheduler, total_ti
 plt.title("Total execution time of rpcs")
 plt.ylabel("execution time (microseconds)")
 
-plt.savefig(f"client/cpp_client/plots/total_execution_time.png", bbox_inches='tight')
+plt.savefig(f"{path_to_output_files}total_execution_time.png", bbox_inches='tight')
 
 plt.clf()
