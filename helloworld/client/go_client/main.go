@@ -70,46 +70,7 @@ func write_to_file(time int64, descr string) {
 	mutex.Unlock()
 }
 
-func thread_without_scheduler(numbers []int32, wg *sync.WaitGroup, descr string) {
-	conn, err := grpc.Dial(*addr, grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	client := pb.NewGreeterClient(conn)
-
-	var numbersInt []*pb.IntNumber
-	for i := 0; i < len(numbers); i++ {
-		numbersInt = append(numbersInt, &pb.IntNumber{Value: numbers[i]})
-	}
-	start := time.Now()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	stream, err := client.ComputeMean(ctx)
-	if err != nil {
-		log.Fatalf("%v.ComputeMean(_) = _, %v", client, err)
-	}
-
-	for _, number := range numbersInt {
-		if err := stream.Send(number); err != nil {
-			log.Fatalf("%v.Send(%v) = %v", stream, number, err)
-		}
-	}
-	reply, err := stream.CloseAndRecv()
-	if err != nil {
-		log.Fatalf("%v.ComputeMean() got error %v, want %v", stream, err, nil)
-	}
-	elapsed := time.Since(start)
-	microseconds_elapsed := elapsed.Microseconds()
-	go write_to_file(microseconds_elapsed, descr)
-	if debug {
-		log.Printf("Got mean: %v", reply.Value)
-	}
-	wg.Done()
-}
-
-func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, wg *sync.WaitGroup, descr string) {
+func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, wg *sync.WaitGroup, descr string, active bool) {
 	if debug {
 		log.Printf("Thread %v going to sleep...", id)
 	}
@@ -121,7 +82,6 @@ func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, 
 	defer conn.Close()
 	client := pb.NewGreeterClient(conn)
 
-	var active = false
 	var numbersInt []*pb.IntNumber
 	for i := 0; i < len(numbers); i++ {
 		numbersInt = append(numbersInt, &pb.IntNumber{Value: numbers[i]})
@@ -181,7 +141,9 @@ func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, 
 	if debug {
 		log.Printf("Thread %v Got mean: %v", id, reply.Value)
 	}
-	unsubscribe <- id
+	if use_scheduler {
+		unsubscribe <- id
+	}
 	wg.Done()
 }
 
@@ -214,15 +176,20 @@ func scheduler(subscribe <-chan string, wg *sync.WaitGroup) {
 			var _, numbers, priority = parse_line(subscribe_str)
 			state_channel := make(chan bool, 2)
 			threads[id] = Thread{priority: priority, channel: state_channel}
-			go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str)
 
-			if max_id == -1 || priority > threads[max_id].priority {
-				max_id = id
-				if running_id != -1 {
-					threads[running_id].channel <- false
+			if use_scheduler {
+				if max_id == -1 || priority > threads[max_id].priority {
+					go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, true)
+					max_id = id
+					if running_id != -1 {
+						threads[running_id].channel <- false
+					}
+					running_id = max_id
+				} else {
+					go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, false)
 				}
-				threads[max_id].channel <- true
-				running_id = max_id
+			} else {
+				go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, true)
 			}
 			if debug {
 				log.Printf("Subscribed: %v", id)
@@ -299,13 +266,14 @@ func main() {
 	}
 	input_file = os.Args[1]
 	output_file = os.Args[2]
+	if err := os.Truncate(output_file, 0); err != nil {
+		log.Printf("Failed to truncate: %v", err)
+	}
 	var wg sync.WaitGroup
 	wg.Add(count_lines(input_file))
 	subscribe := make(chan string, 20)
 
-	if use_scheduler {
-		go scheduler(subscribe, &wg)
-	}
+	go scheduler(subscribe, &wg)
 
 	file, err := os.Open(input_file)
 	if err != nil {
@@ -321,13 +289,8 @@ func main() {
 
 	start := time.Now()
 	for scanner.Scan() {
-		if use_scheduler {
-			subscribe <- scanner.Text()
-		} else {
-			descr := scanner.Text()
-			var _, numbers, _ = parse_line(descr)
-			go thread_without_scheduler(numbers, &wg, descr)
-		}
+		// time.Sleep(300 * time.Microsecond)
+		subscribe <- scanner.Text()
 	}
 
 	if err := scanner.Err(); err != nil {
