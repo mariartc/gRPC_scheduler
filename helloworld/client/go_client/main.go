@@ -35,10 +35,12 @@ import (
 )
 
 var (
-	addr          = flag.String("addr", "localhost:50051", "the address to connect to")
-	debug         = false
-	input_file    = ""
-	output_file   = ""
+	addr                   = flag.String("addr", "localhost:50051", "the address to connect to")
+	debug                  = false
+	input_file             = ""
+	output_file            = ""
+	priorities_and_threads = make(map[int]map[int]Thread)
+	// priorities_and_threads = make(map[int][]Thread)
 	threads       = make(map[int]Thread)
 	use_scheduler = false
 	mutex         sync.Mutex
@@ -47,6 +49,12 @@ var (
 type Thread struct {
 	priority int
 	channel  chan bool
+}
+
+type SubscribeElement struct {
+	priority int
+	numbers  []int32
+	descr    string
 }
 
 func write_to_file(time int64, descr string) {
@@ -95,6 +103,7 @@ func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, 
 		log.Fatalf("%v.ComputeMean(_) = _, %v", client, err)
 	}
 
+	time.Sleep(7000 * time.Microsecond)
 	for _, number := range numbersInt {
 
 		if active && (len(state) != 0) {
@@ -136,75 +145,82 @@ func thread(state <-chan bool, unsubscribe chan<- int, id int, numbers []int32, 
 		log.Fatalf("Thread %v %v.ComputeMean() got error %v, want %v", id, stream, err, nil)
 	}
 	elapsed := time.Since(start)
-	microseconds_elapsed := elapsed.Microseconds()
-	write_to_file(microseconds_elapsed, descr)
-	if debug {
-		log.Printf("Thread %v Got mean: %v", id, reply.Value)
-	}
 	if use_scheduler {
 		unsubscribe <- id
+	}
+	microseconds_elapsed := elapsed.Microseconds()
+	go write_to_file(microseconds_elapsed, descr)
+	if debug {
+		log.Printf("Thread %v Got mean: %v", id, reply.Value)
 	}
 	wg.Done()
 }
 
 func get_max_priority() int {
-	if len(threads) == 0 {
-		return -1
-	}
-
 	max_priority := 0
-	max_id := -1
-	for id, thread := range threads {
-		if thread.priority > max_priority || thread.priority == max_priority && id < max_id {
-			max_id = id
-			max_priority = thread.priority
+	for priority, _ := range priorities_and_threads {
+		if priority > max_priority {
+			max_priority = priority
 		}
 	}
 
-	return max_id
+	return max_priority
 }
 
-func scheduler(subscribe <-chan string, wg *sync.WaitGroup) {
-	unsubscribe := make(chan int, 20)
-	max_id := -1
-	running_id := -1
+func set_channels(priority int, what bool) {
+	for _, thread := range priorities_and_threads[priority] {
+		thread.channel <- what
+	}
+}
+
+func scheduler(subscribe <-chan SubscribeElement, wg *sync.WaitGroup) {
+	unsubscribe := make(chan int, 100)
 	id := 1
+	max_priority := 0
 
 	for {
 		select {
-		case subscribe_str := <-subscribe:
-			var _, numbers, priority = parse_line(subscribe_str)
+		case subscribe_elem := <-subscribe:
 			state_channel := make(chan bool, 2)
-			threads[id] = Thread{priority: priority, channel: state_channel}
+			priority := subscribe_elem.priority
+			numbers := subscribe_elem.numbers
+			descr := subscribe_elem.descr
+			threads[id] = Thread{priority: subscribe_elem.priority}
 
 			if use_scheduler {
-				if max_id == -1 || priority > threads[max_id].priority {
-					go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, true)
-					max_id = id
-					if running_id != -1 {
-						threads[running_id].channel <- false
-					}
-					running_id = max_id
+				if _, ok := priorities_and_threads[priority]; ok {
+					priorities_and_threads[priority][id] = Thread{priority: priority, channel: state_channel}
 				} else {
-					go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, false)
+					priorities_and_threads[priority] = make(map[int]Thread)
+					priorities_and_threads[priority][id] = Thread{priority: priority, channel: state_channel}
+				}
+				priorities_and_threads[priority][id] = Thread{priority: priority, channel: state_channel}
+				if max_priority == 0 {
+					max_priority = priority
+					go thread(state_channel, unsubscribe, id, numbers, wg, descr, true)
+				} else if (priority == max_priority) || (max_priority == 0) {
+					go thread(state_channel, unsubscribe, id, numbers, wg, descr, true)
+				} else if priority > max_priority {
+					set_channels(max_priority, false)
+					go thread(state_channel, unsubscribe, id, numbers, wg, descr, true)
+					max_priority = priority
+				} else {
+					go thread(state_channel, unsubscribe, id, numbers, wg, descr, false)
 				}
 			} else {
-				go thread(state_channel, unsubscribe, id, numbers, wg, subscribe_str, true)
+				go thread(state_channel, unsubscribe, id, numbers, wg, descr, true)
 			}
 			if debug {
 				log.Printf("Subscribed: %v", id)
 			}
 			id += 1
 		case unsubscribe_id := <-unsubscribe:
-			delete(threads, unsubscribe_id)
-			running_id = -1
-			max_id = get_max_priority()
-			if debug {
-				log.Printf("Unsubscribed: %v, new max_id = %v", unsubscribe_id, max_id)
-			}
-			if max_id != -1 {
-				running_id = max_id
-				threads[max_id].channel <- true
+			priority := threads[unsubscribe_id].priority
+			delete(priorities_and_threads[priority], unsubscribe_id)
+			if len(priorities_and_threads[priority]) == 0 {
+				delete(priorities_and_threads, priority)
+				max_priority = get_max_priority()
+				set_channels(max_priority, true)
 			}
 		}
 	}
@@ -271,7 +287,7 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	wg.Add(count_lines(input_file))
-	subscribe := make(chan string, 20)
+	subscribe := make(chan SubscribeElement, 100)
 
 	go scheduler(subscribe, &wg)
 
@@ -290,7 +306,9 @@ func main() {
 	start := time.Now()
 	for scanner.Scan() {
 		// time.Sleep(300 * time.Microsecond)
-		subscribe <- scanner.Text()
+		descr := scanner.Text()
+		var _, numbers, priority = parse_line(descr)
+		subscribe <- SubscribeElement{priority: priority, numbers: numbers, descr: descr}
 	}
 
 	if err := scanner.Err(); err != nil {
