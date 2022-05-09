@@ -7,4 +7,7 @@ helloworld/client/long_array.txt
 helloworld/ghz.json
 helloworld/test.json
 helloworld/ghz
+helloworld/python_scripts/scheduler_scripts/input_file.txt
+helloworld/python_scripts/scheduler_scripts/execution_times.txt
+helloworld/python_scripts/scheduler_scripts/execution_times_scheduler.txt
 .vscode
