@@ -97,8 +97,6 @@ def make_plots_multiplexing(changing_variable, times=10):
 
     average_latency_float_number_list = []
     average_latency_long_string = []
-    average_latency_float_number_list_multiplexing = []
-    average_latency_long_string_multiplexing = []
     average_latency_multiplexing = []
 
     total_time_float_number_list = []
@@ -124,24 +122,6 @@ def make_plots_multiplexing(changing_variable, times=10):
             total_time_multiplexing.append(sum([results[changing_variable][i][str(j+1)]["total"] for j in range(times)])/(times*1000000))
             rps_multiplexing.append(sum([results[changing_variable][i][str(j+1)]["rps"] for j in range(times)])/times)
 
-            sum_float_number_list = 0
-            sum_long_string = 0
-            for time in results[changing_variable][i].keys():
-                sum_float_number_list_time, calls_float_number_list_time = 0, 0
-                sum_long_string_time, calls_long_string_time = 0, 0
-                average_time = results[changing_variable][i][time]["average"]
-                for call in results[changing_variable][i][time]["details"]:
-                    if call["latency"] > average_time:
-                        sum_long_string_time += call["latency"]
-                        calls_long_string_time += 1
-                    else:
-                        sum_float_number_list_time += call["latency"]
-                        calls_float_number_list_time += 1
-                sum_float_number_list += sum_float_number_list_time/calls_float_number_list_time
-                sum_long_string += sum_long_string_time/calls_long_string_time
-            average_latency_float_number_list_multiplexing.append(sum_float_number_list/(times*1000000))
-            average_latency_long_string_multiplexing.append(sum_long_string/(times*1000000))
-
     total_time_float_number_list_calls = [i/int(total) for i in total_time_float_number_list]
     total_time_long_string_calls = [i/int(total) for i in total_time_long_string]
     total_time_multiplexing_calls = [i/int(total) for i in total_time_multiplexing]
@@ -161,35 +141,33 @@ def make_plots_multiplexing(changing_variable, times=10):
         x = [extract_details(i)[2] for i in keys[:(len(keys)//3)]]
         title = f" for {concurrency} concurrency, {total} calls"
         xlabel = "Number of cpu cores"
-        kind = "plot"
 
     # rps
     plot(f"Rps{title}", x, \
         [rps_float_number_list, rps_long_string, rps_multiplexing], xlabel, \
-        "Rps", f"multiplexing/{changing_variable}/rps", ["limegreen", "royalblue", "tomato"], \
+        "Rps", f"multiplexing/rps/{changing_variable}", ["limegreen", "royalblue", "tomato"], \
         "plot", ["o", "x", "."], ['float_number_list', 'long_string', 'multiplexing'])
 
     # total time
     plot(f"Total_time{title}", x, \
         [total_time_float_number_list, total_time_long_string, total_time_multiplexing], \
-        xlabel, "Total_time", f"multiplexing/{changing_variable}/total_time", \
+        xlabel, "Total_time", f"multiplexing/total_time/{changing_variable}", \
         ["limegreen", "royalblue", "tomato"], "plot", ["o", "x", "."], \
         ['float_number_list', 'long_string', 'multiplexing'])
 
     # total time / calls
     plot(f"Total_time/calls{title}", x, \
         [total_time_float_number_list_calls, total_time_long_string_calls, total_time_multiplexing_calls], \
-        xlabel, "Total_time/calls", f"multiplexing/{changing_variable}/total_time_calls", \
+        xlabel, "Total_time/calls", f"multiplexing/total_time_calls/{changing_variable}", \
         ["limegreen", "royalblue", "tomato"], "plot", ["o", "x", "."], \
         ['float_number_list', 'long_string', 'multiplexing'])
 
     # average latency
     plot(f"Average latency{title}", x, \
-        [average_latency_float_number_list, average_latency_long_string, average_latency_multiplexing, \
-        average_latency_float_number_list_multiplexing, average_latency_long_string_multiplexing], \
-        xlabel, "Average latency", f"multiplexing/{changing_variable}/average_latency", \
-        ["limegreen", "royalblue", "tomato", "orange", "pink"], "plot", ["o", "x", ".", "v", "^"], \
-        ['float_number_list', 'long_string', 'multiplexing', 'float_number_list_multiplexing', 'long_string_multiplexing'])
+        [average_latency_float_number_list, average_latency_long_string, average_latency_multiplexing], \
+        xlabel, "Average latency", f"multiplexing/average_latency/{changing_variable}", \
+        ["limegreen", "royalblue", "tomato"], "plot", ["o", "x", "."], \
+        ['float_number_list', 'long_string', 'multiplexing'])
 
 
 
