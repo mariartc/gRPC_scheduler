@@ -45,7 +45,6 @@ func write_to_file(time int64, descr string) {
 		panic(err)
 	}
 
-	defer f.Close()
 	time_int := int(time)
 	if int64(time_int) != time {
 		log.Printf("Error converting int64 to int\n")
@@ -56,6 +55,8 @@ func write_to_file(time int64, descr string) {
 	if _, err = f.WriteString(text); err != nil {
 		panic(err)
 	}
+
+	f.Close()
 	mutex.Unlock()
 }
 
@@ -244,6 +245,7 @@ func count_lines(path_to_file string) int {
 		lines += 1
 	}
 
+	file.Close()
 	return lines
 }
 
@@ -290,6 +292,7 @@ func main() {
 		subscribe <- SubscribeElement{priority: priority, numbers: numbers, descr: descr}
 	}
 
+	file.Close()
 	wg.Wait()
 
 	elapsed := time.Since(start)
