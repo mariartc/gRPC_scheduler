@@ -44,10 +44,12 @@ unordered_map<thread::id, bool> sleep_map;
 vector<std::thread> threads;
 ofstream output_file;
 mutex output_file_mutex, priorities_mutex, cout_mutex, sleep_mutex, subscribe_mutex, unsubscribe_mutex;
-bool stop_scheduler = false, use_scheduler = false, debug = false;
+bool stop_scheduler = false, use_scheduler = false, debug = false, timeout = false;
 
 queue<tuple<thread::id, int>> subscribe;
 queue<thread::id> unsubscribe;
+
+int time_out_times[] = {2000000, 1950000, 1900000, 1800000, 1700000, 1600000, 1500000, 1300000, 1000000, 500000};
 
 
 bool should_sleep(thread::id id){
@@ -58,8 +60,23 @@ bool should_sleep(thread::id id){
 }
 
 
-void sleep_thread(thread::id id){
-  while(should_sleep(id));
+void sleep_thread(thread::id id, std::chrono::_V2::system_clock::time_point start, int priority){
+  std::chrono::_V2::system_clock::time_point stop;
+  std::chrono::microseconds duration;
+  while(should_sleep(id)) {
+    if (timeout){
+      stop = high_resolution_clock::now();
+      duration = duration_cast<microseconds>(stop - start);
+      if (duration.count() >= time_out_times[priority - 1]){
+        if(debug){
+          cout_mutex.lock();
+          cout << id << " woke up because of timeout: " << duration.count()<< " > " << time_out_times[priority - 1] << endl;
+          cout_mutex.unlock();
+        }
+        return;
+      }
+    }
+  }
 }
 
 
@@ -68,7 +85,7 @@ class GreeterClient {
     GreeterClient(shared_ptr<Channel> channel)
       : stub_(Greeter::NewStub(channel)) {}
 
-    FloatNumber ComputeMean(int *arr, int arr_length, thread::id id) {
+    FloatNumber ComputeMean(int *arr, int arr_length, thread::id id, std::chrono::_V2::system_clock::time_point start, int priority) {
       ClientContext context;
       FloatNumber reply;
       
@@ -88,7 +105,7 @@ class GreeterClient {
       }
 
       for (int i = 0; i < arr_length; i++){
-        if(use_scheduler) sleep_thread(id);
+        if(use_scheduler) sleep_thread(id, start, priority);
         if (!writer->Write(int_num_arr[i])){
           cout << "Broken stream" << endl;
           break;
@@ -246,13 +263,13 @@ void run_rpc(string line) {
     sleep_mutex.lock();
     sleep_map[id] = 0;
     sleep_mutex.unlock();
-    sleep_thread(id);
+    sleep_thread(id, start, priority);
   }
 
   GreeterClient greeter(
     grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
 
-  if(use_scheduler) sleep_thread(id);
+  if(use_scheduler) sleep_thread(id, start, priority);
 
   if(debug){
     cout_mutex.lock();
@@ -260,7 +277,7 @@ void run_rpc(string line) {
     cout_mutex.unlock();
   }
   
-  FloatNumber mean = greeter.ComputeMean(arr, arr_length, id);
+  FloatNumber mean = greeter.ComputeMean(arr, arr_length, id, start, priority);
   auto stop = high_resolution_clock::now();
 
   if(debug){
@@ -330,13 +347,15 @@ void scheduler(){
 int main(int argc, char** argv) {
 
   if(argc < 3){
-		cout << "Usage: ./greeter_client <input_file> <output_file> [--scheduler] [--debug]\n";
+		cout << "Usage: ./greeter_client <input_file> <output_file> [--scheduler] [--timeout] [--debug]\n";
 		exit(0);
 	}
   
-  if(argc == 4 && !strcmp(argv[3], "--scheduler") || argc == 5 && !strcmp(argv[3], "--scheduler")) use_scheduler = true;
+  if(argc == 4 && !strcmp(argv[3], "--scheduler") || argc == 5 && !strcmp(argv[3], "--scheduler") || argc == 6 && !strcmp(argv[3], "--scheduler")) use_scheduler = true;
 
-  if(argc == 4 && !strcmp(argv[3], "--debug") || argc == 5 && !strcmp(argv[4], "--debug")) debug = true;
+  if(argc == 5 && !strcmp(argv[4], "--timeout") || argc == 6 && !strcmp(argv[4], "--timeout")) timeout = true;
+
+  if(argc == 4 && !strcmp(argv[3], "--debug") || argc == 5 && !strcmp(argv[4], "--debug") || argc == 6 && !strcmp(argv[5], "--debug")) debug = true;
 
   auto start_total = high_resolution_clock::now();
   std::thread sch;

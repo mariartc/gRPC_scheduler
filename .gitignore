@@ -10,4 +10,5 @@ helloworld/ghz
 helloworld/python_scripts/scheduler_scripts/input_file.txt
 helloworld/python_scripts/scheduler_scripts/execution_times.txt
 helloworld/python_scripts/scheduler_scripts/execution_times_scheduler.txt
+helloworld/python_scripts/scheduler_scripts/execution_times_scheduler_timeout.txt
 .vscode
